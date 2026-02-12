@@ -2,6 +2,9 @@
 FastAPI 애플리케이션 엔트리포인트
 """
 
+from __future__ import annotations
+
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -16,12 +19,12 @@ logger = get_logger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """애플리케이션 시작/종료 시 실행되는 로직"""
     # Startup
-    logger.info(f"🚀 Market Auto Trader 시작 (환경: {settings.app_env})")
+    logger.info("🚀 Market Auto Trader 시작 (환경: %s)", settings.app_env)
     db_host = settings.database_url.split("@")[-1] if "@" in settings.database_url else "unknown"
-    logger.info(f"📊 데이터베이스: {db_host}")
+    logger.info("📊 데이터베이스: %s", db_host)
 
     yield
 

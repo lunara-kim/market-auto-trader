@@ -5,6 +5,8 @@ SQLAlchemy 엔진과 세션 팩토리를 설정하고,
 FastAPI 의존성 주입용 세션 제네레이터를 제공합니다.
 """
 
+from __future__ import annotations
+
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
@@ -14,6 +16,9 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from config.settings import settings
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def _build_async_url(url: str) -> str:
@@ -21,8 +26,11 @@ def _build_async_url(url: str) -> str:
     return url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 
+_async_url = _build_async_url(settings.database_url)
+logger.info("DB 엔진 생성: %s", _async_url.split("@")[-1] if "@" in _async_url else "unknown")
+
 engine = create_async_engine(
-    _build_async_url(settings.database_url),
+    _async_url,
     echo=(settings.app_env == "development"),
     pool_size=5,
     max_overflow=10,
@@ -52,4 +60,5 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.commit()
         except Exception:
             await session.rollback()
+            logger.exception("DB 세션 롤백 발생")
             raise

@@ -16,6 +16,8 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
+from config.backtest import backtest_settings
+from config.trading import trading_settings
 from src.strategy.base import BaseStrategy
 from src.utils.logger import get_logger
 
@@ -435,6 +437,17 @@ class MovingAverageCrossover(BaseStrategy):
                 "error": "데이터 부족",
             }
 
+        # 백테스트 설정에서 수수료/세금 로드 (미설정 시 trading_settings 기본값)
+        buy_commission = backtest_settings.get_commission_rate(
+            fallback=trading_settings.buy_commission_rate,
+        )
+        sell_commission = backtest_settings.get_commission_rate(
+            fallback=trading_settings.sell_commission_rate,
+        )
+        sell_tax = backtest_settings.get_sell_tax_rate(
+            fallback=trading_settings.total_sell_tax_rate,
+        )
+
         prices = [d["close"] for d in historical_data]
         dates = [d.get("date", str(i)) for i, d in enumerate(historical_data)]
 
@@ -476,13 +489,11 @@ class MovingAverageCrossover(BaseStrategy):
 
             # 골든크로스 → 매수 (보유 주식 없을 때만)
             if prev_diff <= 0 < curr_diff and shares == 0:
-                # 전액 매수 (수수료 0.015% 적용)
-                commission_rate = 0.00015
-                available = capital * (1 - commission_rate)
+                available = capital * (1 - buy_commission)
                 shares = int(available // price)
                 if shares > 0:
                     cost = shares * price
-                    commission = cost * commission_rate
+                    commission = cost * buy_commission
                     capital -= cost + commission
                     position_price = price
                     trades.append({
@@ -500,12 +511,9 @@ class MovingAverageCrossover(BaseStrategy):
 
             # 데드크로스 → 매도 (보유 주식 있을 때만)
             elif prev_diff >= 0 > curr_diff and shares > 0:
-                # 전량 매도 (수수료 0.015% + 세금 0.23%)
-                commission_rate = 0.00015
-                tax_rate = 0.0023
                 revenue = shares * price
-                commission = revenue * commission_rate
-                tax = revenue * tax_rate
+                commission = revenue * sell_commission
+                tax = revenue * sell_tax
                 capital += revenue - commission - tax
                 pnl = (price - position_price) / position_price * 100
                 trades.append({
@@ -533,8 +541,8 @@ class MovingAverageCrossover(BaseStrategy):
         final_price = prices[-1]
         if shares > 0:
             revenue = shares * final_price
-            commission = revenue * 0.00015
-            tax = revenue * 0.0023
+            commission = revenue * sell_commission
+            tax = revenue * sell_tax
             capital += revenue - commission - tax
             pnl = (final_price - position_price) / position_price * 100
             trades.append({
@@ -569,15 +577,17 @@ class MovingAverageCrossover(BaseStrategy):
             if dd > max_dd:
                 max_dd = dd
 
-        # 샤프 비율 근사 (연환산, 무위험 3.5%)
+        # 샤프 비율 근사 (연환산)
+        trading_days = backtest_settings.trading_days_per_year
+        risk_free = backtest_settings.risk_free_rate
         if daily_returns:
             avg_return = sum(daily_returns) / len(daily_returns)
             variance = sum((r - avg_return) ** 2 for r in daily_returns) / len(daily_returns)
             std_return = variance ** 0.5
-            annualized_return = avg_return * 252
-            annualized_std = std_return * (252 ** 0.5)
+            annualized_return = avg_return * trading_days
+            annualized_std = std_return * (trading_days ** 0.5)
             sharpe = (
-                (annualized_return - 0.035) / annualized_std
+                (annualized_return - risk_free) / annualized_std
                 if annualized_std > 0 else 0.0
             )
         else:

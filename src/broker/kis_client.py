@@ -56,10 +56,13 @@ TR_ID_OVERSEAS_PRICE = "HHDFS00000300"
 
 # 해외주식 주문 tr_id: (mock, prod)
 # 공식 샘플 기준:
-#   - 모의투자: VTTT1002U → openapivts.koreainvestment.com:29443
-#   - 실전투자: TTTT1002U → openapi.koreainvestment.com:9443
+#   - 모의투자 매수: VTTT1002U → openapivts.koreainvestment.com:29443
+#   - 실전투자 매수: TTTT1002U → openapi.koreainvestment.com:9443
+#   - 모의투자 매도: VTTT1006U
+#   - 실전투자 매도: TTTT1006U
 # (tr_id 첫 글자 = 타겟 서버 규칙을 따름)
 TR_ID_OVERSEAS_BUY = ("VTTT1002U", "TTTT1002U")
+TR_ID_OVERSEAS_SELL = ("VTTT1006U", "TTTT1006U")
 
 # 해외주식 잔고 조회 tr_id: (mock, prod)
 TR_ID_OVERSEAS_BALANCE = ("VTTS3012R", "TTTS3012R")
@@ -614,9 +617,10 @@ class KISClient:
         exchange_code: str,
         quantity: int,
         price: float,
+        order_type: str = "buy",
     ) -> dict[str, Any]:
         """
-        해외주식 매수 주문
+        해외주식 매수/매도 주문
 
         POST /uapi/overseas-stock/v1/trading/order
 
@@ -627,6 +631,7 @@ class KISClient:
             exchange_code: 거래소 코드 ("NASD", "NYSE", "AMEX")
             quantity: 주문 수량 (1 이상 정수)
             price: 주문 가격 (소수점 가능, 0 초과)
+            order_type: "buy" (매수) 또는 "sell" (매도)
 
         Returns:
             주문 결과 dict. 주요 키:
@@ -658,8 +663,16 @@ class KISClient:
                 "해외주식 주문 가격은 0보다 커야 합니다.",
                 detail={"price": price},
             )
+        if order_type not in ("buy", "sell"):
+            raise ValidationError(
+                "order_type은 'buy' 또는 'sell'이어야 합니다.",
+                detail={"order_type": order_type},
+            )
 
-        tr_id = TR_ID_OVERSEAS_BUY[0] if self.mock else TR_ID_OVERSEAS_BUY[1]
+        if order_type == "buy":
+            tr_id = TR_ID_OVERSEAS_BUY[0] if self.mock else TR_ID_OVERSEAS_BUY[1]
+        else:
+            tr_id = TR_ID_OVERSEAS_SELL[0] if self.mock else TR_ID_OVERSEAS_SELL[1]
 
         # 거래소별 주문 구분 코드 매핑
         ovrs_excg_cd_map = {
@@ -676,11 +689,14 @@ class KISClient:
             "ORD_QTY": str(quantity),
             "OVRS_ORD_UNPR": f"{price:.2f}",
             "ORD_SVR_DVSN_CD": "0",
+            # 해외주식은 ORD_DVSN이 가격 유형(지정가/LOO/LOC 등)을 나타내므로
+            # 매수/매도 방향은 tr_id로 구분한다.
             "ORD_DVSN": "00",  # 지정가
         }
 
         logger.info(
-            "해외주식 매수 주문: %s (%s) %d주 × $%.2f",
+            "해외주식 %s 주문: %s (%s) %d주 × $%.2f",
+            "매수" if order_type == "buy" else "매도",
             ticker,
             exchange_code,
             quantity,

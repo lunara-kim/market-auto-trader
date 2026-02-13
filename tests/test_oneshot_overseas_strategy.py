@@ -15,6 +15,8 @@ from src.exceptions import InsufficientFundsError, ValidationError
 from src.strategy.oneshot_overseas import (
     OneShotOverseasOrderConfig,
     OneShotOverseasOrderService,
+    OneShotOverseasSellConfig,
+    OneShotOverseasSellService,
 )
 
 
@@ -32,6 +34,11 @@ def kis_client() -> KISClient:
 @pytest.fixture
 def service(kis_client: KISClient) -> OneShotOverseasOrderService:
     return OneShotOverseasOrderService(kis_client)
+
+
+@pytest.fixture
+def sell_service(kis_client: KISClient) -> OneShotOverseasSellService:
+    return OneShotOverseasSellService(kis_client)
 
 
 class TestInit:
@@ -247,7 +254,7 @@ class TestPrepareOrder:
 
 
 class TestExecuteOrder:
-    """execute_order 동작 테스트"""
+    """execute_order 동작 테스트 (매수)"""
 
     def test_execute_order_calls_client(
         self, service: OneShotOverseasOrderService, kis_client: KISClient
@@ -274,6 +281,7 @@ class TestExecuteOrder:
             exchange_code="NASD",
             quantity=3,
             price=185.50,
+            order_type="buy",
         )
 
         assert result["summary"]["notional"] == 185.50 * 3
@@ -305,6 +313,7 @@ class TestExecuteOrder:
             exchange_code="NASD",
             quantity=1,
             price=180.0,
+            order_type="buy",
         )
 
         assert result["summary"]["order_price"] == 180.0
@@ -329,3 +338,55 @@ class TestExecuteOrder:
             service.execute_order(config)
 
         kis_client.place_overseas_order.assert_not_called()  # type: ignore[attr-defined]
+
+
+class TestOverseasSellService:
+    """해외 원샷 매도 서비스 테스트"""
+
+    def test_prepare_sell_reuses_buy_logic(
+        self, sell_service: OneShotOverseasSellService, kis_client: KISClient
+    ) -> None:
+        kis_client.get_overseas_price = MagicMock(  # type: ignore[assignment]
+            return_value={"last": "200.00"}
+        )
+
+        config = OneShotOverseasSellConfig(
+            ticker="AAPL",
+            exchange_code="NASD",
+            quantity=2,
+            max_notional_usd=500.0,
+        )
+
+        summary = sell_service.prepare_sell(config)
+
+        assert summary["notional"] == 400.0
+        assert summary["order_type"] == "market_price"
+
+    def test_execute_sell_calls_client_with_sell_order_type(
+        self, sell_service: OneShotOverseasSellService, kis_client: KISClient
+    ) -> None:
+        kis_client.get_overseas_price = MagicMock(  # type: ignore[assignment]
+            return_value={"last": "150.00"}
+        )
+        kis_client.place_overseas_order = MagicMock(  # type: ignore[assignment]
+            return_value={"ODNO": "0000123456"}
+        )
+
+        config = OneShotOverseasSellConfig(
+            ticker="TSLA",
+            exchange_code="NASD",
+            quantity=3,
+            max_notional_usd=1000.0,
+        )
+
+        result = sell_service.execute_sell(config)
+
+        kis_client.place_overseas_order.assert_called_once_with(  # type: ignore[attr-defined]
+            ticker="TSLA",
+            exchange_code="NASD",
+            quantity=3,
+            price=150.0,
+            order_type="sell",
+        )
+
+        assert result["raw_result"]["ODNO"] == "0000123456"

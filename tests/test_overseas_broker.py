@@ -17,6 +17,7 @@ from src.broker.kis_client import (
     TR_ID_OVERSEAS_BALANCE,
     TR_ID_OVERSEAS_BUY,
     TR_ID_OVERSEAS_PRICE,
+    TR_ID_OVERSEAS_SELL,
     VALID_EXCHANGE_CODES,
 )
 from src.exceptions import BrokerError, OrderError, ValidationError
@@ -156,7 +157,7 @@ class TestPlaceOverseasOrder:
         return {"HASH": "overseas_hash_key_123"}
 
     def test_place_overseas_order_success(self, overseas_order_response, hashkey_response):
-        """해외주식 정상 주문"""
+        """해외주식 정상 매수 주문"""
         client = _make_client()
 
         mock_hash_resp = _mock_response(200, hashkey_response)
@@ -166,6 +167,22 @@ class TestPlaceOverseasOrder:
             client._client, "post", side_effect=[mock_hash_resp, mock_order_resp]
         ):
             result = client.place_overseas_order("AAPL", "NASD", 1, 185.50)
+
+        assert result["ODNO"] == "0000567890"
+        assert result["ORD_TMD"] == "093000"
+        client.close()
+
+    def test_place_overseas_order_sell_success(self, overseas_order_response, hashkey_response):
+        """해외주식 정상 매도 주문"""
+        client = _make_client()
+
+        mock_hash_resp = _mock_response(200, hashkey_response)
+        mock_order_resp = _mock_response(200, overseas_order_response)
+
+        with patch.object(
+            client._client, "post", side_effect=[mock_hash_resp, mock_order_resp]
+        ):
+            result = client.place_overseas_order("AAPL", "NASD", 1, 185.50, order_type="sell")
 
         assert result["ODNO"] == "0000567890"
         assert result["ORD_TMD"] == "093000"
@@ -194,7 +211,7 @@ class TestPlaceOverseasOrder:
         client.close()
 
     def test_place_overseas_order_mock_tr_id(self, overseas_order_response, hashkey_response):
-        """모의투자 → VTTT1002U"""
+        """모의투자 매수 → VTTT1002U"""
         client = _make_client(mock=True)
 
         mock_hash_resp = _mock_response(200, hashkey_response)
@@ -209,8 +226,24 @@ class TestPlaceOverseasOrder:
         assert order_call.kwargs["headers"]["tr_id"] == TR_ID_OVERSEAS_BUY[0]
         client.close()
 
+    def test_place_overseas_order_mock_tr_id_sell(self, overseas_order_response, hashkey_response):
+        """모의투자 매도 → VTTT1006U"""
+        client = _make_client(mock=True)
+
+        mock_hash_resp = _mock_response(200, hashkey_response)
+        mock_order_resp = _mock_response(200, overseas_order_response)
+
+        with patch.object(
+            client._client, "post", side_effect=[mock_hash_resp, mock_order_resp]
+        ) as mock_post:
+            client.place_overseas_order("AAPL", "NASD", 1, 185.50, order_type="sell")
+
+        order_call = mock_post.call_args_list[1]
+        assert order_call.kwargs["headers"]["tr_id"] == TR_ID_OVERSEAS_SELL[0]
+        client.close()
+
     def test_place_overseas_order_prod_tr_id(self, overseas_order_response, hashkey_response):
-        """실전투자 → TTTT1002U"""
+        """실전투자 매수 → TTTT1002U"""
         client = _make_client(mock=False)
 
         mock_hash_resp = _mock_response(200, hashkey_response)
@@ -223,6 +256,22 @@ class TestPlaceOverseasOrder:
 
         order_call = mock_post.call_args_list[1]
         assert order_call.kwargs["headers"]["tr_id"] == TR_ID_OVERSEAS_BUY[1]
+        client.close()
+
+    def test_place_overseas_order_prod_tr_id_sell(self, overseas_order_response, hashkey_response):
+        """실전투자 매도 → TTTT1006U"""
+        client = _make_client(mock=False)
+
+        mock_hash_resp = _mock_response(200, hashkey_response)
+        mock_order_resp = _mock_response(200, overseas_order_response)
+
+        with patch.object(
+            client._client, "post", side_effect=[mock_hash_resp, mock_order_resp]
+        ) as mock_post:
+            client.place_overseas_order("AAPL", "NASD", 1, 185.50, order_type="sell")
+
+        order_call = mock_post.call_args_list[1]
+        assert order_call.kwargs["headers"]["tr_id"] == TR_ID_OVERSEAS_SELL[1]
         client.close()
 
     def test_place_overseas_order_invalid_ticker(self):

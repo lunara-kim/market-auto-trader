@@ -110,6 +110,7 @@ def test_overseas_oneshot_live_order(monkeypatch: pytest.MonkeyPatch) -> None:
         exchange_code="NASD",
         quantity=2,
         price=250.0,
+        order_type="buy",
     )
 
 
@@ -148,6 +149,7 @@ def test_overseas_oneshot_with_explicit_price(monkeypatch: pytest.MonkeyPatch) -
         exchange_code="NYSE",
         quantity=1,
         price=180.0,
+        order_type="buy",
     )
 
 
@@ -226,3 +228,129 @@ def test_overseas_oneshot_invalid_exchange_code(monkeypatch: pytest.MonkeyPatch)
     response = client.post("/api/v1/policies/oneshot/overseas", json=payload)
     # 서비스 레벨 ValidationError → 422
     assert response.status_code == 422
+
+
+# ───────────────────── Overseas Sell Oneshot API Tests ─────────────────────
+
+
+def test_overseas_oneshot_sell_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """해외 원샷 매도 dry_run=True일 때 summary만 반환"""
+    _patch_kis_init(monkeypatch)
+
+    monkeypatch.setattr(
+        "src.broker.kis_client.KISClient.get_overseas_price",
+        MagicMock(return_value={"last": "300.00"}),
+    )
+    place_order_mock = MagicMock(return_value={"ODNO": "0000123456"})
+    monkeypatch.setattr(
+        "src.broker.kis_client.KISClient.place_overseas_order",
+        place_order_mock,
+    )
+
+    payload = {
+        "ticker": "AAPL",
+        "exchange_code": "NASD",
+        "quantity": 2,
+        "max_notional_usd": 1000.0,
+        "dry_run": True,
+    }
+
+    response = client.post("/api/v1/policies/oneshot/overseas/sell", json=payload)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["summary"]["notional"] == 600.0
+    assert data["raw_result"] is None
+    place_order_mock.assert_not_called()
+
+
+def test_overseas_oneshot_sell_live_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    """해외 원샷 매도 dry_run=False일 때 실제 매도 주문 호출"""
+    _patch_kis_init(monkeypatch)
+
+    monkeypatch.setattr(
+        "src.broker.kis_client.KISClient.get_overseas_price",
+        MagicMock(return_value={"last": "100.00"}),
+    )
+    place_order_mock = MagicMock(return_value={"ODNO": "0000654321"})
+    monkeypatch.setattr(
+        "src.broker.kis_client.KISClient.place_overseas_order",
+        place_order_mock,
+    )
+
+    payload = {
+        "ticker": "TSLA",
+        "exchange_code": "NASD",
+        "quantity": 3,
+        "max_notional_usd": 1000.0,
+        "dry_run": False,
+    }
+
+    response = client.post("/api/v1/policies/oneshot/overseas/sell", json=payload)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["summary"]["notional"] == 300.0
+    assert data["raw_result"]["ODNO"] == "0000654321"
+
+    place_order_mock.assert_called_once_with(
+        ticker="TSLA",
+        exchange_code="NASD",
+        quantity=3,
+        price=100.0,
+        order_type="sell",
+    )
+
+
+def test_overseas_oneshot_sell_insufficient_funds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """해외 원샷 매도 max_notional_usd 초과 시 400 반환"""
+    _patch_kis_init(monkeypatch)
+
+    monkeypatch.setattr(
+        "src.broker.kis_client.KISClient.get_overseas_price",
+        MagicMock(return_value={"last": "500.00"}),
+    )
+
+    payload = {
+        "ticker": "AAPL",
+        "exchange_code": "NASD",
+        "quantity": 2,
+        "max_notional_usd": 800.0,
+        "dry_run": False,
+    }
+
+    response = client.post("/api/v1/policies/oneshot/overseas/sell", json=payload)
+    assert response.status_code == 400
+
+    data = response.json()
+    assert data["error"]["code"] == "INSUFFICIENT_FUNDS"
+
+
+def test_overseas_oneshot_sell_default_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """매도 엔드포인트도 dry_run 기본값은 True"""
+    _patch_kis_init(monkeypatch)
+
+    monkeypatch.setattr(
+        "src.broker.kis_client.KISClient.get_overseas_price",
+        MagicMock(return_value={"last": "120.00"}),
+    )
+    place_order_mock = MagicMock(return_value={"ODNO": "0000777777"})
+    monkeypatch.setattr(
+        "src.broker.kis_client.KISClient.place_overseas_order",
+        place_order_mock,
+    )
+
+    payload = {
+        "ticker": "AMZN",
+        "exchange_code": "NASD",
+        "quantity": 1,
+        "max_notional_usd": 500.0,
+    }
+
+    response = client.post("/api/v1/policies/oneshot/overseas/sell", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["raw_result"] is None
+    place_order_mock.assert_not_called()

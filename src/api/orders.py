@@ -18,6 +18,8 @@ from src.strategy.oneshot import OneShotOrderConfig, OneShotOrderService
 from src.strategy.oneshot_overseas import (
     OneShotOverseasOrderConfig,
     OneShotOverseasOrderService,
+    OneShotOverseasSellConfig,
+    OneShotOverseasSellService,
 )
 from src.utils.logger import get_logger
 
@@ -142,6 +144,32 @@ class OneShotOverseasOrderResponse(BaseModel):
     raw_result: dict[str, Any] | None = None
 
 
+class OneShotOverseasSellOrderRequest(BaseModel):
+    """해외 원샷 매도 주문 요청 스키마"""
+
+    ticker: str = Field(..., description="해외 종목 티커 (예: AAPL, TSLA)", min_length=1, max_length=10)
+    exchange_code: str = Field(..., description="거래소 코드 (NASD, NYSE, AMEX)")
+    quantity: int = Field(..., description="매도 수량 (1 이상)", ge=1)
+    max_notional_usd: float = Field(
+        ..., description="매도 금액 상한 USD (현재가 * 수량이 이 값을 초과하면 거부)", gt=0
+    )
+    explicit_price: float | None = Field(
+        None,
+        description="지정가 매도 가격 (USD). None이면 현재가 기반 주문.",
+    )
+    dry_run: bool = Field(
+        True,
+        description="True면 실제 주문은 보내지 않고 금액/유효성 검증만 수행",
+    )
+
+
+class OneShotOverseasSellOrderResponse(BaseModel):
+    """해외 원샷 매도 주문 응답 스키마"""
+
+    summary: dict[str, Any]
+    raw_result: dict[str, Any] | None = None
+
+
 @router.post("/oneshot/overseas", response_model=OneShotOverseasOrderResponse)
 async def execute_oneshot_overseas_policy(
     payload: OneShotOverseasOrderRequest,
@@ -182,3 +210,43 @@ async def execute_oneshot_overseas_policy(
         result = service.execute_order(config)
 
         return OneShotOverseasOrderResponse(**result)
+
+
+@router.post("/oneshot/overseas/sell", response_model=OneShotOverseasSellOrderResponse)
+async def execute_oneshot_overseas_sell_policy(
+    payload: OneShotOverseasSellOrderRequest,
+) -> OneShotOverseasSellOrderResponse:
+    """해외주식 원샷 **매도** 정책 실행 엔드포인트
+
+    - dry_run=True(default): 현재가 조회 + 금액 상한 검증만 수행
+    - dry_run=False: 실제 매도 주문까지 수행
+
+    해외주식(미국: NASD/NYSE/AMEX)에 대한 단일 매도 주문을 실행한다.
+    """
+
+    logger.info(
+        "해외 원샷 매도 정책 실행 요청: %s (%s) %d주",
+        payload.ticker,
+        payload.exchange_code,
+        payload.quantity,
+    )
+
+    with _create_kis_client_from_settings() as client:
+        service = OneShotOverseasSellService(client)
+        config = OneShotOverseasSellConfig(
+            ticker=payload.ticker,
+            exchange_code=payload.exchange_code,
+            quantity=payload.quantity,
+            max_notional_usd=payload.max_notional_usd,
+            explicit_price=payload.explicit_price,
+        )
+
+        summary = service.prepare_sell(config)
+
+        if payload.dry_run:
+            logger.info("해외 원샷 매도 정책 dry_run 완료 (주문 미발송): %s", summary)
+            return OneShotOverseasSellOrderResponse(summary=summary, raw_result=None)
+
+        result = service.execute_sell(config)
+
+        return OneShotOverseasSellOrderResponse(**result)

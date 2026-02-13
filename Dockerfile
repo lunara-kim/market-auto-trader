@@ -14,6 +14,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 소스 코드 복사
+COPY alembic.ini /app/
+COPY alembic/ /app/alembic/
 COPY config/ /app/config/
 COPY src/ /app/src/
 
@@ -24,5 +26,5 @@ ENV PYTHONPATH=/app
 # 포트 노출
 EXPOSE 8000
 
-# 앱 실행
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 마이그레이션 실행 후 앱 시작
+CMD ["sh", "-c", "alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8000"]

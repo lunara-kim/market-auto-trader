@@ -4,19 +4,26 @@
 모든 매매 전략이 상속받아야 하는 추상 클래스를 정의합니다.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from typing import Any
+
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class BaseStrategy(ABC):
     """매매 전략 베이스 클래스"""
 
-    def __init__(self, name: str):
+    def __init__(self, name: str) -> None:
         """
         Args:
             name: 전략 이름
         """
         self.name = name
+        logger.info("전략 초기화: %s", name)
 
     @abstractmethod
     def analyze(self, market_data: dict[str, Any]) -> dict[str, Any]:
@@ -29,7 +36,6 @@ class BaseStrategy(ABC):
         Returns:
             분석 결과 (기술적 지표, 트렌드, 리스크 등)
         """
-        pass
 
     @abstractmethod
     def generate_signal(self, analysis_result: dict[str, Any]) -> dict[str, Any]:
@@ -42,11 +48,12 @@ class BaseStrategy(ABC):
         Returns:
             매매 신호 (매수/매도/관망, 목표가, 손절가 등)
         """
-        pass
 
     @abstractmethod
     def backtest(
-        self, historical_data: list[dict[str, Any]], initial_capital: float
+        self,
+        historical_data: list[dict[str, Any]],
+        initial_capital: float,
     ) -> dict[str, Any]:
         """
         과거 데이터로 전략 백테스팅
@@ -58,4 +65,3 @@ class BaseStrategy(ABC):
         Returns:
             백테스팅 결과 (수익률, 승률, MDD, 샤프 비율 등)
         """
-        pass

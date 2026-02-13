@@ -4,10 +4,12 @@
 JSON 포맷 로깅을 지원하며, 환경변수로 로그 레벨을 조정할 수 있습니다.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 
 from config.settings import settings
 
@@ -17,8 +19,8 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         """로그 레코드를 JSON 형식으로 변환"""
-        log_data = {
-            "timestamp": datetime.utcnow().isoformat(),
+        log_data: dict[str, object] = {
+            "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -60,10 +62,13 @@ def get_logger(name: str) -> logging.Logger:
 
     # JSON 포매터 적용 (프로덕션 환경)
     if settings.app_env == "production":
-        formatter = JSONFormatter()
+        formatter: logging.Formatter = JSONFormatter()
     else:
         # 개발 환경에서는 읽기 쉬운 포맷 사용
-        formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        formatter = logging.Formatter(
+            "%(asctime)s | %(name)-30s | %(levelname)-8s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
 
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)

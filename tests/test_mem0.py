@@ -9,10 +9,16 @@ mem0의 add()는 내부적으로 LLM을 호출하여 기억을 추출하므로,
 LLM 없이 순수 벡터 저장/검색을 직접 테스트합니다.
 """
 
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct
-from fastembed import TextEmbedding
 import uuid
+
+import pytest
+
+try:
+    from qdrant_client import QdrantClient
+    from qdrant_client.models import Distance, VectorParams, PointStruct
+    from fastembed import TextEmbedding
+except ImportError:
+    pytest.skip("qdrant_client/fastembed not installed", allow_module_level=True)
 
 
 def main():

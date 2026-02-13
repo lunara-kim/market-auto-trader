@@ -55,7 +55,11 @@ ORD_DVSN_LIMIT = "00"  # 지정가
 TR_ID_OVERSEAS_PRICE = "HHDFS00000300"
 
 # 해외주식 주문 tr_id: (mock, prod)
-TR_ID_OVERSEAS_BUY = ("VTTT1002U", "JTTT1002U")
+# 공식 샘플 기준:
+#   - 모의투자: VTTT1002U → openapivts.koreainvestment.com:29443
+#   - 실전투자: TTTT1002U → openapi.koreainvestment.com:9443
+# (tr_id 첫 글자 = 타겟 서버 규칙을 따름)
+TR_ID_OVERSEAS_BUY = ("VTTT1002U", "TTTT1002U")
 
 # 해외주식 잔고 조회 tr_id: (mock, prod)
 TR_ID_OVERSEAS_BALANCE = ("VTTS3012R", "TTTS3012R")
@@ -581,12 +585,22 @@ class KISClient:
             )
 
         logger.info("해외 시세 조회: %s (%s)", ticker, exchange_code)
+
+        # KIS API는 거래소 코드를 3자리 형식("NAS", "NYS", "AMS")으로 받지만
+        # 외부 인터페이스는 사람이 익숙한 "NASD", "NYSE", "AMEX"를 사용한다.
+        excd_map = {
+            "NASD": "NAS",
+            "NYSE": "NYS",
+            "AMEX": "AMS",
+        }
+        excd = excd_map[exchange_code]
+
         data = self._request_get(
             path="/uapi/overseas-price/v1/quotations/price",
             tr_id=TR_ID_OVERSEAS_PRICE,
             params={
                 "AUTH": "",
-                "EXCD": exchange_code,
+                "EXCD": excd,
                 "SYMB": ticker,
             },
         )

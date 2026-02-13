@@ -77,7 +77,7 @@ class TestGetOverseasPrice:
         client.close()
 
     def test_get_overseas_price_passes_correct_params(self, overseas_price_response):
-        """해외 시세 조회 시 올바른 파라미터 전달"""
+        """해외 시세 조회 시 올바른 파라미터 전달 (EXCD 4→3자리 매핑 포함)"""
         client = _make_client()
         mock_resp = _mock_response(200, overseas_price_response)
 
@@ -85,7 +85,8 @@ class TestGetOverseasPrice:
             client.get_overseas_price("TSLA", "NASD")
 
         call_kwargs = mock_get.call_args
-        assert call_kwargs.kwargs["params"]["EXCD"] == "NASD"
+        # 외부 인터페이스 "NASD" → KIS 내부 3자리 코드 "NAS" 로 매핑
+        assert call_kwargs.kwargs["params"]["EXCD"] == "NAS"
         assert call_kwargs.kwargs["params"]["SYMB"] == "TSLA"
         assert call_kwargs.kwargs["headers"]["tr_id"] == TR_ID_OVERSEAS_PRICE
         client.close()
@@ -209,7 +210,7 @@ class TestPlaceOverseasOrder:
         client.close()
 
     def test_place_overseas_order_prod_tr_id(self, overseas_order_response, hashkey_response):
-        """실전투자 → JTTT1002U"""
+        """실전투자 → TTTT1002U"""
         client = _make_client(mock=False)
 
         mock_hash_resp = _mock_response(200, hashkey_response)

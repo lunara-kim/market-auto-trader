@@ -1,252 +1,188 @@
-"""주문 관련 FastAPI 엔드포인트
+"""
+주문 API 라우터
 
-- 원샷(단일) 매수 정책 실행 (국내/해외)
+한투 OpenAPI를 통해 주식 주문을 실행하고,
+DB에서 주문 내역을 조회합니다.
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict
-from typing import Any
+from datetime import UTC, datetime
 
-from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from config.settings import settings
-from src.broker.kis_client import KISClient
-from src.exceptions import ValidationError
-from src.strategy.oneshot import OneShotOrderConfig, OneShotOrderService
-from src.strategy.oneshot_overseas import (
-    OneShotOverseasOrderConfig,
-    OneShotOverseasOrderService,
-    OneShotOverseasSellConfig,
-    OneShotOverseasSellService,
+from src.api.dependencies import get_db, get_kis_client
+from src.api.schemas import (
+    OrderHistoryItem,
+    OrderHistoryResponse,
+    OrderRequest,
+    OrderResponse,
 )
+from src.broker.kis_client import KISClient
+from src.exceptions import OrderError
+from src.models.schema import Order
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/api/v1/policies", tags=["policies"])
+router = APIRouter(prefix="/api/v1", tags=["Orders"])
 
 
-class OneShotOrderRequest(BaseModel):
-    """원샷 주문 요청 스키마
-
-    실제 매매 정책이지만, dry_run 플래그를 통해 주문 전 검증만 수행할 수도 있다.
+@router.post(
+    "/orders",
+    response_model=OrderResponse,
+    summary="매매 주문 실행",
+    description=(
+        "한투 OpenAPI를 통해 매수/매도 주문을 실행합니다. "
+        "price를 생략하면 시장가 주문입니다."
+    ),
+)
+async def place_order(
+    req: OrderRequest,
+    client: KISClient = Depends(get_kis_client),
+    db: AsyncSession = Depends(get_db),
+) -> OrderResponse:
     """
+    주문 실행 엔드포인트
 
-    stock_code: str = Field(..., description="6자리 종목 코드", min_length=6, max_length=6)
-    quantity: int = Field(..., description="주문 수량 (1 이상)", ge=1)
-    max_notional_krw: int = Field(
-        ..., description="주문 금액 상한 (현재가 * 수량이 이 값을 초과하면 거부)", gt=0
-    )
-    explicit_price: int | None = Field(
-        None,
-        description="지정가 주문 가격. None이면 시장가 주문.",
-    )
-    dry_run: bool = Field(
-        True,
-        description="True면 실제 주문은 보내지 않고 금액/유효성 검증만 수행",
-    )
-
-
-class OneShotOrderResponse(BaseModel):
-    """원샷 주문 응답 스키마"""
-
-    summary: dict[str, Any]
-    raw_result: dict[str, Any] | None = None
-
-
-def _create_kis_client_from_settings() -> KISClient:
-    """환경설정에서 한국투자증권 클라이언트 생성"""
-    if not settings.kis_app_key or not settings.kis_app_secret or not settings.kis_account_no:
-        raise ValidationError(
-            "KIS API 설정이 누락되었습니다.",
-            detail={
-                "kis_app_key": bool(settings.kis_app_key),
-                "kis_app_secret": bool(settings.kis_app_secret),
-                "kis_account_no": bool(settings.kis_account_no),
-            },
-        )
-
-    client = KISClient(
-        app_key=settings.kis_app_key,
-        app_secret=settings.kis_app_secret,
-        account_no=settings.kis_account_no,
-        mock=settings.kis_mock,
-    )
-    return client
-
-
-@router.post("/oneshot", response_model=OneShotOrderResponse)
-async def execute_oneshot_policy(payload: OneShotOrderRequest) -> OneShotOrderResponse:
-    """원샷 매매 정책 실행 엔드포인트
-
-    - dry_run=True(default): 현재가 조회 + 금액 상한 검증만 수행
-    - dry_run=False: 실제 주문까지 수행
-
-    이 엔드포인트는 "정책(policy)" 관점에서 단일 주문을 실행하는 용도로 설계되었으며,
-    내부적으로는 OneShotOrderService를 사용한다.
+    1. KISClient로 한투 API에 주문 요청
+    2. 주문 결과를 DB에 기록
+    3. 주문번호/상태 응답
     """
-
-    # Pydantic 기본 검증 이후, 추가 도메인 검증은 서비스 레벨에서 수행
     logger.info(
-        "원샷 정책 실행 요청: %s", asdict(OneShotOrderConfig(**payload.model_dump(exclude={"dry_run"})))
+        "주문 요청: %s %s %d주 (가격: %s)",
+        req.order_type.value,
+        req.stock_code,
+        req.quantity,
+        str(req.price) if req.price else "시장가",
     )
 
-    with _create_kis_client_from_settings() as client:
-        service = OneShotOrderService(client)
-        config = OneShotOrderConfig(
-            stock_code=payload.stock_code,
-            quantity=payload.quantity,
-            max_notional_krw=payload.max_notional_krw,
-            explicit_price=payload.explicit_price,
+    # 1) 한투 API 주문 실행
+    try:
+        result = client.place_order(
+            stock_code=req.stock_code,
+            order_type=req.order_type.value,
+            quantity=req.quantity,
+            price=req.price,
         )
+    except OrderError:
+        logger.exception("주문 실패: %s %s", req.order_type.value, req.stock_code)
+        raise
 
-        # 먼저 금액/유효성 검증
-        summary = service.prepare_order(config)
+    order_no = result.get("ODNO", "unknown")
+    order_time = result.get("ORD_TMD", "")
 
-        if payload.dry_run:
-            logger.info("원샷 정책 dry_run 완료 (주문 미발송): %s", summary)
-            return OneShotOrderResponse(summary=summary, raw_result=None)
-
-        # 실제 주문 실행
-        result = service.execute_order(config)
-
-        return OneShotOrderResponse(**result)
-
-
-# ───────────────────── Overseas Oneshot ─────────────────────
-
-
-class OneShotOverseasOrderRequest(BaseModel):
-    """해외 원샷 주문 요청 스키마"""
-
-    ticker: str = Field(..., description="해외 종목 티커 (예: AAPL, TSLA)", min_length=1, max_length=10)
-    exchange_code: str = Field(..., description="거래소 코드 (NASD, NYSE, AMEX)")
-    quantity: int = Field(..., description="주문 수량 (1 이상)", ge=1)
-    max_notional_usd: float = Field(
-        ..., description="주문 금액 상한 USD (현재가 * 수량이 이 값을 초과하면 거부)", gt=0
+    # 2) DB에 주문 기록
+    order = Order(
+        stock_code=req.stock_code,
+        order_type=req.order_type.value,
+        order_price=float(req.price) if req.price else None,
+        quantity=req.quantity,
+        status="executed",
     )
-    explicit_price: float | None = Field(
-        None,
-        description="지정가 주문 가격 (USD). None이면 현재가 기반 주문.",
-    )
-    dry_run: bool = Field(
-        True,
-        description="True면 실제 주문은 보내지 않고 금액/유효성 검증만 수행",
+    db.add(order)
+
+    logger.info("주문 완료: %s 주문번호=%s", req.order_type.value, order_no)
+
+    return OrderResponse(
+        order_id=order_no,
+        stock_code=req.stock_code,
+        order_type=req.order_type.value,
+        quantity=req.quantity,
+        price=str(req.price) if req.price else "시장가",
+        status="executed",
+        ordered_at=order_time or datetime.now(UTC).isoformat(),
     )
 
 
-class OneShotOverseasOrderResponse(BaseModel):
-    """해외 원샷 주문 응답 스키마"""
-
-    summary: dict[str, Any]
-    raw_result: dict[str, Any] | None = None
-
-
-class OneShotOverseasSellOrderRequest(BaseModel):
-    """해외 원샷 매도 주문 요청 스키마"""
-
-    ticker: str = Field(..., description="해외 종목 티커 (예: AAPL, TSLA)", min_length=1, max_length=10)
-    exchange_code: str = Field(..., description="거래소 코드 (NASD, NYSE, AMEX)")
-    quantity: int = Field(..., description="매도 수량 (1 이상)", ge=1)
-    max_notional_usd: float = Field(
-        ..., description="매도 금액 상한 USD (현재가 * 수량이 이 값을 초과하면 거부)", gt=0
-    )
-    explicit_price: float | None = Field(
-        None,
-        description="지정가 매도 가격 (USD). None이면 현재가 기반 주문.",
-    )
-    dry_run: bool = Field(
-        True,
-        description="True면 실제 주문은 보내지 않고 금액/유효성 검증만 수행",
-    )
-
-
-class OneShotOverseasSellOrderResponse(BaseModel):
-    """해외 원샷 매도 주문 응답 스키마"""
-
-    summary: dict[str, Any]
-    raw_result: dict[str, Any] | None = None
-
-
-@router.post("/oneshot/overseas", response_model=OneShotOverseasOrderResponse)
-async def execute_oneshot_overseas_policy(
-    payload: OneShotOverseasOrderRequest,
-) -> OneShotOverseasOrderResponse:
-    """해외주식 원샷 매매 정책 실행 엔드포인트
-
-    - dry_run=True(default): 현재가 조회 + 금액 상한 검증만 수행
-    - dry_run=False: 실제 주문까지 수행
-
-    해외주식(미국: NASD/NYSE/AMEX)에 대한 단일 매수 주문을 실행한다.
+@router.get(
+    "/orders",
+    response_model=OrderHistoryResponse,
+    summary="주문 내역 조회",
+    description="DB에 저장된 주문 내역을 페이지네이션으로 조회합니다.",
+)
+async def get_orders(
+    stock_code: str | None = Query(
+        default=None,
+        min_length=6,
+        max_length=6,
+        description="종목 코드 필터",
+    ),
+    order_type: str | None = Query(
+        default=None,
+        description="주문 유형 필터 (buy/sell)",
+    ),
+    status: str | None = Query(
+        default=None,
+        description="상태 필터 (pending/executed/cancelled/failed)",
+    ),
+    page: int = Query(default=1, ge=1, description="페이지 번호"),
+    size: int = Query(default=20, ge=1, le=100, description="페이지 크기"),
+    db: AsyncSession = Depends(get_db),
+) -> OrderHistoryResponse:
     """
+    주문 내역 조회 엔드포인트
 
-    logger.info(
-        "해외 원샷 정책 실행 요청: %s (%s) %d주",
-        payload.ticker,
-        payload.exchange_code,
-        payload.quantity,
-    )
-
-    with _create_kis_client_from_settings() as client:
-        service = OneShotOverseasOrderService(client)
-        config = OneShotOverseasOrderConfig(
-            ticker=payload.ticker,
-            exchange_code=payload.exchange_code,
-            quantity=payload.quantity,
-            max_notional_usd=payload.max_notional_usd,
-            explicit_price=payload.explicit_price,
-        )
-
-        # 먼저 금액/유효성 검증
-        summary = service.prepare_order(config)
-
-        if payload.dry_run:
-            logger.info("해외 원샷 정책 dry_run 완료 (주문 미발송): %s", summary)
-            return OneShotOverseasOrderResponse(summary=summary, raw_result=None)
-
-        # 실제 주문 실행
-        result = service.execute_order(config)
-
-        return OneShotOverseasOrderResponse(**result)
-
-
-@router.post("/oneshot/overseas/sell", response_model=OneShotOverseasSellOrderResponse)
-async def execute_oneshot_overseas_sell_policy(
-    payload: OneShotOverseasSellOrderRequest,
-) -> OneShotOverseasSellOrderResponse:
-    """해외주식 원샷 **매도** 정책 실행 엔드포인트
-
-    - dry_run=True(default): 현재가 조회 + 금액 상한 검증만 수행
-    - dry_run=False: 실제 매도 주문까지 수행
-
-    해외주식(미국: NASD/NYSE/AMEX)에 대한 단일 매도 주문을 실행한다.
+    필터링: 종목코드, 주문유형, 상태
+    정렬: 최신 주문 먼저
+    페이지네이션: page, size
     """
-
     logger.info(
-        "해외 원샷 매도 정책 실행 요청: %s (%s) %d주",
-        payload.ticker,
-        payload.exchange_code,
-        payload.quantity,
+        "주문 내역 조회: stock_code=%s, type=%s, status=%s, page=%d",
+        stock_code,
+        order_type,
+        status,
+        page,
     )
 
-    with _create_kis_client_from_settings() as client:
-        service = OneShotOverseasSellService(client)
-        config = OneShotOverseasSellConfig(
-            ticker=payload.ticker,
-            exchange_code=payload.exchange_code,
-            quantity=payload.quantity,
-            max_notional_usd=payload.max_notional_usd,
-            explicit_price=payload.explicit_price,
+    # 쿼리 조건 빌드
+    stmt = select(Order)
+    count_stmt = select(func.count(Order.id))
+
+    if stock_code:
+        stmt = stmt.where(Order.stock_code == stock_code)
+        count_stmt = count_stmt.where(Order.stock_code == stock_code)
+    if order_type:
+        stmt = stmt.where(Order.order_type == order_type)
+        count_stmt = count_stmt.where(Order.order_type == order_type)
+    if status:
+        stmt = stmt.where(Order.status == status)
+        count_stmt = count_stmt.where(Order.status == status)
+
+    # 정렬 + 페이지네이션
+    offset = (page - 1) * size
+    stmt = stmt.order_by(Order.created_at.desc()).offset(offset).limit(size)
+
+    # 실행
+    result = await db.execute(stmt)
+    orders = result.scalars().all()
+
+    count_result = await db.execute(count_stmt)
+    total = count_result.scalar() or 0
+
+    items = [
+        OrderHistoryItem(
+            id=o.id,
+            stock_code=o.stock_code,
+            stock_name=o.stock_name,
+            order_type=o.order_type,
+            order_price=o.order_price,
+            quantity=o.quantity,
+            status=o.status,
+            executed_price=o.executed_price,
+            executed_at=o.executed_at,
+            created_at=o.created_at,
         )
+        for o in orders
+    ]
 
-        summary = service.prepare_sell(config)
+    logger.info("주문 내역 조회 완료: %d건 (전체 %d건)", len(items), total)
 
-        if payload.dry_run:
-            logger.info("해외 원샷 매도 정책 dry_run 완료 (주문 미발송): %s", summary)
-            return OneShotOverseasSellOrderResponse(summary=summary, raw_result=None)
-
-        result = service.execute_sell(config)
-
-        return OneShotOverseasSellOrderResponse(**result)
+    return OrderHistoryResponse(
+        orders=items,
+        total=total,
+        page=page,
+        size=size,
+    )

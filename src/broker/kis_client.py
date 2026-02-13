@@ -3,9 +3,9 @@
 
 한국투자증권의 REST API를 사용하여:
 - 접근 토큰 발급/갱신
-- 주식 현재가 시세 조회
-- 현금 매수/매도 주문
-- 계좌 잔고 조회
+- 주식 현재가 시세 조회 (국내/해외)
+- 현금 매수/매도 주문 (국내/해외)
+- 계좌 잔고 조회 (국내/해외)
 
 모의투자(VPS)와 실전투자(PROD) 모두 지원합니다.
 
@@ -48,6 +48,20 @@ TR_ID_BALANCE = ("VTTC8434R", "TTTC8434R")
 # 주문 구분 코드
 ORD_DVSN_MARKET = "01"  # 시장가
 ORD_DVSN_LIMIT = "00"  # 지정가
+
+# ───────────────────── Overseas Constants ─────────────────────
+
+# 해외주식 시세 tr_id
+TR_ID_OVERSEAS_PRICE = "HHDFS00000300"
+
+# 해외주식 주문 tr_id: (mock, prod)
+TR_ID_OVERSEAS_BUY = ("VTTT1002U", "JTTT1002U")
+
+# 해외주식 잔고 조회 tr_id: (mock, prod)
+TR_ID_OVERSEAS_BALANCE = ("VTTS3012R", "TTTS3012R")
+
+# 지원 거래소 코드
+VALID_EXCHANGE_CODES = {"NASD", "NYSE", "AMEX"}
 
 # API rate limit: 초당 20건 (안전 마진 포함)
 MIN_REQUEST_INTERVAL = 0.06  # 60ms
@@ -525,6 +539,203 @@ class KISClient:
 
         logger.info(
             "잔고 조회 완료: 보유종목 %d건",
+            len(holdings),
+        )
+        return result
+
+    # ───────────────────── Overseas Price ─────────────────────
+
+    def get_overseas_price(
+        self, ticker: str, exchange_code: str
+    ) -> dict[str, Any]:
+        """
+        해외주식 현재가 시세 조회
+
+        GET /uapi/overseas-price/v1/quotations/price
+
+        Args:
+            ticker: 해외 종목 티커 (예: "AAPL", "TSLA")
+            exchange_code: 거래소 코드 ("NASD", "NYSE", "AMEX")
+
+        Returns:
+            시세 정보 dict. 주요 키:
+                - last: 현재가
+                - diff: 전일 대비
+                - rate: 전일 대비율 (%)
+                - tvol: 거래량
+                - tamt: 거래대금
+
+        Raises:
+            ValidationError: 잘못된 파라미터
+            BrokerError: API 호출 실패
+        """
+        if not ticker or not ticker.isalpha():
+            raise ValidationError(
+                "해외 종목 티커는 영문자로만 구성되어야 합니다.",
+                detail={"ticker": ticker},
+            )
+        if exchange_code not in VALID_EXCHANGE_CODES:
+            raise ValidationError(
+                f"거래소 코드는 {VALID_EXCHANGE_CODES} 중 하나여야 합니다.",
+                detail={"exchange_code": exchange_code},
+            )
+
+        logger.info("해외 시세 조회: %s (%s)", ticker, exchange_code)
+        data = self._request_get(
+            path="/uapi/overseas-price/v1/quotations/price",
+            tr_id=TR_ID_OVERSEAS_PRICE,
+            params={
+                "AUTH": "",
+                "EXCD": exchange_code,
+                "SYMB": ticker,
+            },
+        )
+        return data.get("output", {})
+
+    # ───────────────────── Overseas Order ─────────────────────
+
+    def place_overseas_order(
+        self,
+        ticker: str,
+        exchange_code: str,
+        quantity: int,
+        price: float,
+    ) -> dict[str, Any]:
+        """
+        해외주식 매수 주문
+
+        POST /uapi/overseas-stock/v1/trading/order
+
+        해외주식은 시장가 주문이 제한적이므로 지정가(price)를 필수로 받습니다.
+
+        Args:
+            ticker: 해외 종목 티커 (예: "AAPL")
+            exchange_code: 거래소 코드 ("NASD", "NYSE", "AMEX")
+            quantity: 주문 수량 (1 이상 정수)
+            price: 주문 가격 (소수점 가능, 0 초과)
+
+        Returns:
+            주문 결과 dict. 주요 키:
+                - KRX_FWDG_ORD_ORGNO: 주문 조직번호
+                - ODNO: 주문번호
+                - ORD_TMD: 주문 시각
+
+        Raises:
+            ValidationError: 잘못된 파라미터
+            OrderError: 주문 실패
+        """
+        if not ticker or not ticker.isalpha():
+            raise ValidationError(
+                "해외 종목 티커는 영문자로만 구성되어야 합니다.",
+                detail={"ticker": ticker},
+            )
+        if exchange_code not in VALID_EXCHANGE_CODES:
+            raise ValidationError(
+                f"거래소 코드는 {VALID_EXCHANGE_CODES} 중 하나여야 합니다.",
+                detail={"exchange_code": exchange_code},
+            )
+        if quantity < 1:
+            raise ValidationError(
+                "주문 수량은 1 이상이어야 합니다.",
+                detail={"quantity": quantity},
+            )
+        if price <= 0:
+            raise ValidationError(
+                "해외주식 주문 가격은 0보다 커야 합니다.",
+                detail={"price": price},
+            )
+
+        tr_id = TR_ID_OVERSEAS_BUY[0] if self.mock else TR_ID_OVERSEAS_BUY[1]
+
+        # 거래소별 주문 구분 코드 매핑
+        ovrs_excg_cd_map = {
+            "NASD": "NASD",
+            "NYSE": "NYSE",
+            "AMEX": "AMEX",
+        }
+
+        body = {
+            "CANO": self.cano,
+            "ACNT_PRDT_CD": self.acnt_prdt_cd,
+            "OVRS_EXCG_CD": ovrs_excg_cd_map[exchange_code],
+            "PDNO": ticker,
+            "ORD_QTY": str(quantity),
+            "OVRS_ORD_UNPR": f"{price:.2f}",
+            "ORD_SVR_DVSN_CD": "0",
+            "ORD_DVSN": "00",  # 지정가
+        }
+
+        logger.info(
+            "해외주식 매수 주문: %s (%s) %d주 × $%.2f",
+            ticker,
+            exchange_code,
+            quantity,
+            price,
+        )
+
+        try:
+            data = self._request_post(
+                path="/uapi/overseas-stock/v1/trading/order",
+                tr_id=tr_id,
+                body=body,
+                use_hashkey=True,
+            )
+        except BrokerError as e:
+            raise OrderError(
+                str(e),
+                detail=e.detail,
+            ) from e
+
+        result = data.get("output", {})
+        logger.info(
+            "해외주식 주문 완료: 주문번호 %s (시각: %s)",
+            result.get("ODNO", "N/A"),
+            result.get("ORD_TMD", "N/A"),
+        )
+        return result
+
+    # ───────────────────── Overseas Balance ─────────────────────
+
+    def get_overseas_balance(self) -> dict[str, Any]:
+        """
+        해외주식 잔고 조회
+
+        GET /uapi/overseas-stock/v1/trading/inquire-balance
+
+        Returns:
+            잔고 정보 dict:
+                - holdings: 해외 보유 종목 리스트 (output1)
+                - summary: 계좌 요약 (output2)
+
+        Raises:
+            BrokerError: API 호출 실패
+        """
+        tr_id = TR_ID_OVERSEAS_BALANCE[0] if self.mock else TR_ID_OVERSEAS_BALANCE[1]
+
+        logger.info("해외주식 잔고 조회 요청")
+        data = self._request_get(
+            path="/uapi/overseas-stock/v1/trading/inquire-balance",
+            tr_id=tr_id,
+            params={
+                "CANO": self.cano,
+                "ACNT_PRDT_CD": self.acnt_prdt_cd,
+                "OVRS_EXCG_CD": "NASD",
+                "TR_CRCY_CD": "USD",
+                "CTX_AREA_FK200": "",
+                "CTX_AREA_NK200": "",
+            },
+        )
+
+        holdings = data.get("output1", [])
+        summary = data.get("output2", {})
+
+        result = {
+            "holdings": holdings,
+            "summary": summary,
+        }
+
+        logger.info(
+            "해외주식 잔고 조회 완료: 보유종목 %d건",
             len(holdings),
         )
         return result

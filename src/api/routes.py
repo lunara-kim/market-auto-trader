@@ -7,12 +7,14 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from config.settings import settings
+from src.api.orders import router as orders_router
 from src.exceptions import NotFoundError
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 router = APIRouter()
+router.include_router(orders_router)
 
 
 @router.get("/health")

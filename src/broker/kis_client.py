@@ -17,8 +17,8 @@ References:
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime, timezone, timedelta
+from typing import Any, Dict, Tuple
 
 import httpx
 
@@ -73,6 +73,11 @@ VALID_EXCHANGE_CODES = {"NASD", "NYSE", "AMEX"}
 # API rate limit: 초당 20건 (안전 마진 포함)
 MIN_REQUEST_INTERVAL = 0.06  # 60ms
 
+# 토큰 발급 rate limit: KIS 기준 1분당 1회 (EGW00133)
+# - 기준: appkey 단위 (공식 문서 및 샘플 코드 기준)
+# - 위반 시 403 + error_code=EGW00133, error_description="접근토큰 발급 잠시 후 다시 시도하세요(1분당 1회)"
+TOKEN_ISSUE_COOLDOWN_SECONDS = 60.0
+
 
 class KISClient:
     """한국투자증권 API 클라이언트
@@ -92,6 +97,12 @@ class KISClient:
         price = client.get_price("005930")
         print(price["stck_prpr"])  # 현재가
     """
+
+    # 프로세스 내 공유 토큰 캐시 (app_key, mock) 기준)
+    # - EGW00133 (1분당 1회 제한) 회피를 위해 동일 앱키에 대해 토큰을 재사용
+    # - 여러 KISClient 인스턴스가 있어도 하나의 토큰/만료 정보를 공유
+    _token_cache: Dict[Tuple[str, bool], Dict[str, Any]] = {}
+    _last_token_rate_limited_at: Dict[Tuple[str, bool], float] = {}
 
     def __init__(
         self,
@@ -158,9 +169,25 @@ class KISClient:
 
     @property
     def access_token(self) -> str:
-        """유효한 접근 토큰 반환. 만료 시 자동 재발급."""
+        """유효한 접근 토큰 반환. 만료 시 자동 재발급.
+
+        EGW00133 ("접근토큰 발급 잠시 후 다시 시도하세요(1분당 1회)") 대응을 위해
+        동일 프로세스 내에서는 app_key + mock 기준으로 토큰을 공유/캐싱합니다.
+        """
+        cache_key = (self.app_key, self.mock)
+
+        # 1) 캐시에 토큰이 있고, 현재 인스턴스에 토큰이 없다면 우선 채워준다.
+        if self._access_token is None:
+            cached = self._token_cache.get(cache_key)
+            if cached is not None:
+                self._access_token = cached.get("token")
+                self._token_expired_at = cached.get("expired_at")
+
+        # 2) 인스턴스 기준으로 토큰이 여전히 유효하면 바로 반환
         if self._is_token_valid():
             return self._access_token  # type: ignore[return-value]
+
+        # 3) 토큰이 없거나 만료된 경우에만 실제 발급 API 호출
         self._issue_token()
         return self._access_token  # type: ignore[return-value]
 
@@ -175,7 +202,30 @@ class KISClient:
         ) - __import__("datetime").timedelta(minutes=5)
 
     def _issue_token(self) -> None:
-        """POST /oauth2/tokenP 로 접근 토큰 발급"""
+        """POST /oauth2/tokenP 로 접근 토큰 발급
+
+        한국투자증권 OpenAPI는 접근 토큰 발급을 "1분당 1회"로 제한(EGW00133)하므로,
+        동일 app_key + 환경(mock/prod) 기준으로 발급 요청을 캐싱/백오프한다.
+        """
+        cache_key = (self.app_key, self.mock)
+
+        # EGW00133가 최근에 발생했다면, 해당 쿨다운 기간 동안은 바로 예외를 발생시켜
+        # 불필요한 재시도(그리고 추가적인 EGW00133)를 방지한다.
+        now = time.time()
+        last_limited = self._last_token_rate_limited_at.get(cache_key)
+        if last_limited is not None:
+            elapsed = now - last_limited
+            if elapsed < TOKEN_ISSUE_COOLDOWN_SECONDS:
+                remaining = int(TOKEN_ISSUE_COOLDOWN_SECONDS - elapsed) + 1
+                raise BrokerAuthError(
+                    "토큰 발급이 1분당 1회 제한(EGW00133)에 걸렸습니다. "
+                    f"약 {remaining}초 후 다시 시도하세요.",
+                    detail={
+                        "cooldown_remaining": remaining,
+                        "error_code": "EGW00133",
+                    },
+                )
+
         logger.info("접근 토큰 발급 요청 중...")
         body = {
             "grant_type": "client_credentials",
@@ -186,9 +236,31 @@ class KISClient:
             resp = self._client.post("/oauth2/tokenP", json=body)
             resp.raise_for_status()
         except httpx.HTTPStatusError as e:
+            # 403 + EGW00133 (1분당 1회 제한) 처리
+            status = e.response.status_code
+            try:
+                err_json = e.response.json()
+            except Exception:  # pragma: no cover - 방어적 코드
+                err_json = None
+
+            if status == 403 and isinstance(err_json, dict):
+                error_code = err_json.get("error_code")
+                if error_code == "EGW00133":
+                    # rate limit 시각을 기록하고 안내 메시지와 함께 예외 발생
+                    self._last_token_rate_limited_at[cache_key] = time.time()
+                    raise BrokerAuthError(
+                        "한국투자증권 토큰 발급이 1분당 1회 제한(EGW00133)에 걸렸습니다. "
+                        "약 60초 후 다시 시도하세요.",
+                        detail={
+                            "status": status,
+                            "body": err_json,
+                            "error_code": error_code,
+                        },
+                    ) from e
+
             raise BrokerAuthError(
                 "토큰 발급 실패",
-                detail={"status": e.response.status_code, "body": e.response.text},
+                detail={"status": status, "body": e.response.text},
             ) from e
         except httpx.RequestError as e:
             raise BrokerError(
@@ -199,20 +271,29 @@ class KISClient:
         data = resp.json()
         self._access_token = data["access_token"]
 
-        # 만료 시각 파싱 (KIS 포맷: "2026-02-14 06:11:00")
+        # 만료 시각 파싱 (KIS 포맷: "2026-02-14 06:11:00" / KST 기준)
         expired_str = data.get("access_token_token_expired", "")
         if expired_str:
-            self._token_expired_at = datetime.strptime(
-                expired_str, "%Y-%m-%d %H:%M:%S"
+            # KIS는 KST(UTC+9) 기준 시각 문자열을 반환하므로, 이를 KST로 해석한 뒤
+            # UTC로 변환하여 내부적으로는 항상 UTC 타임존으로 처리한다.
+            kst = timezone(timedelta(hours=9))
+            expires_local = datetime.strptime(expired_str, "%Y-%m-%d %H:%M:%S").replace(
+                tzinfo=kst
             )
+            self._token_expired_at = expires_local.astimezone(timezone.utc)
         else:
-            # 기본 24시간
-            from datetime import timedelta
-
+            # 만료 시각 정보가 없으면 보수적으로 24시간 유효하다고 가정
             self._token_expired_at = datetime.now(timezone.utc) + timedelta(hours=24)
 
+        # 발급된 토큰을 프로세스 전역 캐시에 저장하여, 동일 app_key + mock
+        # 조합의 다른 KISClient 인스턴스가 재사용할 수 있게 한다.
+        self._token_cache[cache_key] = {
+            "token": self._access_token,
+            "expired_at": self._token_expired_at,
+        }
+
         logger.info(
-            "토큰 발급 완료 (만료: %s)",
+            "토큰 발급 완료 (만료: %s, UTC 기준)",
             self._token_expired_at.strftime("%Y-%m-%d %H:%M:%S"),
         )
 

@@ -191,6 +191,11 @@ class TestKISClientInit:
 class TestTokenManagement:
     """토큰 발급/갱신 테스트"""
 
+    def teardown_method(self):
+        """클래스 레벨 토큰 캐시 초기화 (테스트 간 간섭 방지)"""
+        KISClient._token_cache.clear()
+        KISClient._last_token_rate_limited_at.clear()
+
     def test_issue_token_success(self, mock_token_response):
         """토큰 정상 발급"""
         client = KISClient(MOCK_APP_KEY, MOCK_APP_SECRET, MOCK_ACCOUNT)
@@ -264,6 +269,41 @@ class TestTokenManagement:
             with pytest.raises(BrokerError, match="네트워크 오류"):
                 _ = client.access_token
         client.close()
+
+    def test_token_rate_limit_error_sets_cooldown_and_avoids_retry(self):
+        """EGW00133 발생 후 60초 이내에는 재발급 API를 다시 호출하지 않는다."""
+        client = KISClient(MOCK_APP_KEY, MOCK_APP_SECRET, MOCK_ACCOUNT)
+
+        # 첫 번째 호출: 서버가 EGW00133을 반환
+        error_body = {
+            "error_description": "접근토큰 발급 잠시 후 다시 시도하세요(1분당 1회)",
+            "error_code": "EGW00133",
+        }
+        error_resp = httpx.Response(
+            403,
+            json=error_body,
+            request=httpx.Request("POST", "http://test/oauth2/tokenP"),
+        )
+
+        with patch("src.broker.kis_client.time.time", return_value=1000.0):
+            with patch.object(
+                client._client,
+                "post",
+                side_effect=httpx.HTTPStatusError(
+                    "403", request=error_resp.request, response=error_resp
+                ),
+            ) as mock_post:
+                with pytest.raises(BrokerAuthError, match="1분당 1회 제한"):
+                    _ = client.access_token
+                # 실제 토큰 발급 API가 한 번 호출된 것은 허용 (최초 시도)
+                assert mock_post.call_count == 1
+
+        # 두 번째 호출: 쿨다운 내이므로 _client.post는 호출되지 않아야 함
+        with patch("src.broker.kis_client.time.time", return_value=1005.0):
+            with patch.object(client._client, "post") as mock_post:
+                with pytest.raises(BrokerAuthError, match="1분당 1회 제한"):
+                    _ = client.access_token
+                mock_post.assert_not_called()
 
 
 # ───────────────────── Price Tests ─────────────────────

@@ -1,5 +1,5 @@
 """
-FastAPI 라우터 정의
+FastAPI 라우터 정의 — 기본 라우트 (헬스체크 등)
 """
 
 from __future__ import annotations
@@ -7,41 +7,24 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from config.settings import settings
-from src.api.orders import router as orders_router
-from src.exceptions import NotFoundError
+from src.api.schemas import HealthResponse
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter()
-router.include_router(orders_router)
+router = APIRouter(tags=["System"])
 
 
-@router.get("/health")
-async def health_check() -> dict[str, str]:
+@router.get(
+    "/health",
+    response_model=HealthResponse,
+    summary="헬스 체크",
+    description="서비스 상태 확인용 엔드포인트",
+)
+async def health_check() -> HealthResponse:
     """헬스 체크 엔드포인트"""
-    return {
-        "status": "ok",
-        "version": "0.2.0",
-        "env": settings.app_env,
-    }
-
-
-@router.get("/api/v1/portfolio")
-async def get_portfolio() -> None:
-    """포트폴리오 조회 (구현 예정)"""
-    logger.debug("포트폴리오 조회 요청")
-    raise NotFoundError(
-        "포트폴리오 조회 기능은 아직 구현되지 않았습니다.",
-        detail={"phase": 2, "status": "planned"},
-    )
-
-
-@router.post("/api/v1/signal")
-async def create_signal() -> None:
-    """매매 신호 생성 (구현 예정)"""
-    logger.debug("매매 신호 생성 요청")
-    raise NotFoundError(
-        "매매 신호 생성 기능은 아직 구현되지 않았습니다.",
-        detail={"phase": 2, "status": "planned"},
+    return HealthResponse(
+        status="ok",
+        version="0.3.0",
+        env=settings.app_env,
     )

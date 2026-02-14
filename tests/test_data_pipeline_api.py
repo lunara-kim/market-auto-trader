@@ -7,12 +7,13 @@ FastAPI 엔드포인트를 테스트합니다.
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from src.main import app
 from src.models.schema import Base, MarketData
@@ -23,8 +24,12 @@ from src.models.schema import Base, MarketData
 
 @pytest.fixture
 def test_engine():
-    """인메모리 SQLite DB 엔진"""
-    engine = create_engine("sqlite:///:memory:")
+    """인메모리 SQLite DB 엔진 (StaticPool로 연결 공유)"""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(engine)
     return engine
 
@@ -38,9 +43,13 @@ def session_factory(test_engine):
 @pytest.fixture
 def client(session_factory):
     """FastAPI 테스트 클라이언트"""
+    from src.api.dependencies import get_kis_client
+    from src.broker.kis_client import KISClient
     from src.db import get_session_factory
 
+    mock_client = MagicMock(spec=KISClient)
     app.dependency_overrides[get_session_factory] = lambda: session_factory
+    app.dependency_overrides[get_kis_client] = lambda: mock_client
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
@@ -48,9 +57,14 @@ def client(session_factory):
 
 @pytest.fixture
 def mock_kis_client():
-    """KISClient 모킹"""
-    with patch("src.api.data_pipeline.get_kis_client") as mock:
-        yield mock
+    """KISClient 모킹 (app.dependency_overrides 경유)"""
+    from src.api.dependencies import get_kis_client
+    from src.broker.kis_client import KISClient
+
+    mock_client = MagicMock(spec=KISClient)
+    app.dependency_overrides[get_kis_client] = lambda: mock_client
+    yield mock_client
+    app.dependency_overrides.pop(get_kis_client, None)
 
 
 @pytest.fixture

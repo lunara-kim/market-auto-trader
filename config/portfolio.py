@@ -40,6 +40,13 @@ class PortfolioSettings(BaseSettings):
     # ── 리밸런싱 모드 ──
     rebalance_mode: str = "threshold"  # "proportional" 또는 "threshold"
 
+    # ── 자동 리밸런싱 스케줄 ──
+    rebalance_enabled: bool = False  # 자동 리밸런싱 활성화 여부
+    rebalance_schedule: str = "weekly"  # daily / weekly / monthly
+    rebalance_day_of_week: int = 0  # 0=월요일 (weekly용)
+    rebalance_day_of_month: int = 1  # 1~28 (monthly용)
+    rebalance_hour: int = 9  # 실행 시간 (KST)
+
     model_config = SettingsConfigDict(
         env_prefix="PORTFOLIO_",
         env_file=".env",
@@ -105,6 +112,47 @@ class PortfolioSettings(BaseSettings):
         if v not in allowed_modes:
             raise ValueError(
                 f"rebalance_mode는 {allowed_modes} 중 하나여야 합니다 (입력: {v})"
+            )
+        return v
+
+    @field_validator("rebalance_schedule", mode="after")
+    @classmethod
+    def validate_rebalance_schedule(cls, v: str) -> str:
+        """리밸런싱 스케줄 유효성 검증"""
+        allowed = {"daily", "weekly", "monthly"}
+        if v not in allowed:
+            raise ValueError(
+                f"rebalance_schedule은 {allowed} 중 하나여야 합니다 (입력: {v})"
+            )
+        return v
+
+    @field_validator("rebalance_day_of_week", mode="after")
+    @classmethod
+    def validate_rebalance_day_of_week(cls, v: int) -> int:
+        """요일 유효성 검증 (0=월요일 ~ 6=일요일)"""
+        if v < 0 or v > 6:
+            raise ValueError(
+                f"rebalance_day_of_week는 0(월)~6(일) 사이여야 합니다 (입력: {v})"
+            )
+        return v
+
+    @field_validator("rebalance_day_of_month", mode="after")
+    @classmethod
+    def validate_rebalance_day_of_month(cls, v: int) -> int:
+        """월 내 일자 유효성 검증 (1~28)"""
+        if v < 1 or v > 28:
+            raise ValueError(
+                f"rebalance_day_of_month는 1~28 사이여야 합니다 (입력: {v})"
+            )
+        return v
+
+    @field_validator("rebalance_hour", mode="after")
+    @classmethod
+    def validate_rebalance_hour(cls, v: int) -> int:
+        """실행 시간 유효성 검증 (0~23)"""
+        if v < 0 or v > 23:
+            raise ValueError(
+                f"rebalance_hour는 0~23 사이여야 합니다 (입력: {v})"
             )
         return v
 

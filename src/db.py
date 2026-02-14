@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -45,8 +47,7 @@ async_session_factory = async_sessionmaker(
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """
-    FastAPI Depends용 DB 세션 제네레이터.
+    """FastAPI Depends용 DB 세션 제네레이터.
 
     사용법::
 
@@ -62,3 +63,30 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.rollback()
             logger.exception("DB 세션 롤백 발생")
             raise
+
+
+# ───────────────────── 동기 SQLAlchemy 지원 ─────────────────────
+
+# 동기 엔진과 세션 팩토리 (일반 SQLAlchemy ORM용)
+_sync_engine = create_engine(settings.database_url, pool_pre_ping=True)
+
+SyncSessionFactory = sessionmaker(
+    bind=_sync_engine,
+    class_=Session,
+    autoflush=False,
+    autocommit=False,
+)
+
+
+def get_session_factory() -> sessionmaker:
+    """동기 세션 팩토리 의존성.
+
+    FastAPI Depends 에서 주입하기 위한 동기 SQLAlchemy ``sessionmaker``.
+
+    예:
+        session_factory = Depends(get_session_factory)
+        with session_factory() as session:
+            ...
+    """
+
+    return SyncSessionFactory

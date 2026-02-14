@@ -214,3 +214,114 @@ class SignalHistoryResponse(BaseModel):
 
     signals: list[SignalHistoryItem] = Field(default_factory=list)
     total: int
+
+
+# ─────────────────────────────────────────────
+# 리밸런싱
+# ─────────────────────────────────────────────
+
+
+class RebalanceExecuteRequest(BaseModel):
+    """리밸런싱 실행 요청"""
+
+    dry_run: bool = Field(default=True, description="True이면 계획만 생성 (실제 실행 안 함)")
+
+
+class RebalanceOrderDetailItem(BaseModel):
+    """리밸런싱 개별 주문 상세"""
+
+    id: int | None = Field(default=None, description="DB ID (저장 전이면 None)")
+    stock_code: str = Field(description="종목 코드")
+    side: str = Field(description="buy 또는 sell")
+    quantity: int = Field(description="주문 수량")
+    current_price: float = Field(description="현재가")
+    target_value_krw: float = Field(description="목표 포지션 금액 (원)")
+    reason: str | None = Field(default=None, description="주문 생성 사유")
+    status: str = Field(default="planned", description="주문 상태")
+    created_at: datetime | None = None
+
+
+class RebalanceExecuteResponse(BaseModel):
+    """리밸런싱 실행 응답"""
+
+    rebalance_id: int | None = Field(
+        default=None, description="DB ID (dry_run이면 None)",
+    )
+    trigger_type: str = Field(description="manual 또는 scheduled")
+    dry_run: bool = Field(description="dry_run 여부")
+    total_equity: float = Field(description="총 평가액")
+    cash_before: float = Field(description="실행 전 현금")
+    cash_after: float = Field(description="실행 후 예상 현금")
+    total_orders: int = Field(description="생성된 주문 수")
+    buy_orders_count: int = Field(description="매수 주문 수")
+    sell_orders_count: int = Field(description="매도 주문 수")
+    skipped_stocks: list[str] = Field(default_factory=list)
+    status: str = Field(description="상태")
+    order_details: list[RebalanceOrderDetailItem] = Field(default_factory=list)
+
+
+class RebalanceHistoryItem(BaseModel):
+    """리밸런싱 내역 항목"""
+
+    id: int
+    trigger_type: str
+    schedule_type: str | None = None
+    total_equity: float
+    cash_before: float
+    cash_after: float
+    total_orders: int
+    buy_orders_count: int
+    sell_orders_count: int
+    status: str
+    started_at: datetime
+    completed_at: datetime | None = None
+    created_at: datetime
+
+
+class RebalanceHistoryResponse(BaseModel):
+    """리밸런싱 내역 목록 응답"""
+
+    items: list[RebalanceHistoryItem] = Field(default_factory=list)
+    total: int = Field(description="전체 건수")
+    page: int = Field(default=1)
+    size: int = Field(default=20)
+
+
+class RebalanceDetailResponse(BaseModel):
+    """리밸런싱 상세 조회 응답"""
+
+    id: int
+    trigger_type: str
+    schedule_type: str | None = None
+    total_equity: float
+    cash_before: float
+    cash_after: float
+    total_orders: int
+    buy_orders_count: int
+    sell_orders_count: int
+    skipped_stocks: list[str] = Field(default_factory=list)
+    status: str
+    error_message: str | None = None
+    started_at: datetime
+    completed_at: datetime | None = None
+    created_at: datetime
+    order_details: list[RebalanceOrderDetailItem] = Field(default_factory=list)
+
+
+class RebalanceScheduleResponse(BaseModel):
+    """리밸런싱 스케줄 조회 응답"""
+
+    enabled: bool = Field(description="자동 리밸런싱 활성화 여부")
+    schedule: str = Field(description="스케줄 주기 (daily/weekly/monthly)")
+    day_of_week: int = Field(description="실행 요일 (0=월, weekly용)")
+    day_of_month: int = Field(description="실행일 (monthly용)")
+    hour: int = Field(description="실행 시간 (KST)")
+    next_run_at: str | None = Field(
+        default=None, description="다음 실행 예정 시각 (ISO 8601)",
+    )
+
+
+class RebalanceToggleRequest(BaseModel):
+    """자동 리밸런싱 활성화/비활성화 요청"""
+
+    enabled: bool = Field(description="True이면 활성화, False이면 비활성화")

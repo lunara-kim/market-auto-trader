@@ -13,6 +13,7 @@ from config.settings import settings
 from src.api.orders import router as orders_router
 from src.api.policies import router as policies_router
 from src.api.portfolio import router as portfolio_router
+from src.api.rebalancing import router as rebalancing_router
 from src.api.routes import router as base_router
 from src.api.signals import router as signals_router
 from src.api.strategy_manager import router as strategy_manager_router
@@ -47,6 +48,10 @@ OPENAPI_TAGS = [
     {
         "name": "Strategies",
         "description": "복합 전략 매니저 — 다중 전략 신호 종합, 투표, 성과 비교",
+    },
+    {
+        "name": "Rebalancing",
+        "description": "포트폴리오 리밸런싱 실행, 내역 조회, 스케줄 관리",
     },
 ]
 
@@ -90,6 +95,7 @@ app.include_router(orders_router)
 app.include_router(signals_router)
 app.include_router(policies_router)
 app.include_router(strategy_manager_router)
+app.include_router(rebalancing_router)
 
 
 if __name__ == "__main__":

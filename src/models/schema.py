@@ -91,6 +91,61 @@ class MarketData(Base):
     created_at: Mapped[datetime] = mapped_column(default=_utcnow)
 
 
+class RebalanceHistory(Base):
+    """리밸런싱 내역 테이블"""
+
+    __tablename__ = "rebalance_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    trigger_type: Mapped[str] = mapped_column(String(20))  # "manual", "scheduled"
+    schedule_type: Mapped[str | None] = mapped_column(String(20))  # "daily", "weekly", "monthly"
+    total_equity: Mapped[float]  # 실행 시점 총 평가액
+    cash_before: Mapped[float]  # 실행 전 현금
+    cash_after: Mapped[float]  # 실행 후 예상 현금
+    total_orders: Mapped[int]  # 생성된 주문 수
+    buy_orders_count: Mapped[int]
+    sell_orders_count: Mapped[int]
+    skipped_stocks: Mapped[str | None] = mapped_column(Text())  # JSON 배열
+    status: Mapped[str] = mapped_column(
+        String(20), default="planned",
+    )  # planned, executing, completed, failed
+    error_message: Mapped[str | None] = mapped_column(Text())
+    started_at: Mapped[datetime] = mapped_column(default=_utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(default=_utcnow)
+
+    # 관계
+    order_details: Mapped[list[RebalanceOrderDetail]] = relationship(
+        back_populates="rebalance_history",
+    )
+
+
+class RebalanceOrderDetail(Base):
+    """리밸런싱 주문 상세 테이블"""
+
+    __tablename__ = "rebalance_order_details"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    rebalance_id: Mapped[int] = mapped_column(
+        ForeignKey("rebalance_history.id"),
+    )
+    stock_code: Mapped[str] = mapped_column(String(20))
+    side: Mapped[str] = mapped_column(String(10))  # buy, sell
+    quantity: Mapped[int]
+    current_price: Mapped[float]
+    target_value_krw: Mapped[float]
+    reason: Mapped[str | None] = mapped_column(Text())
+    status: Mapped[str] = mapped_column(
+        String(20), default="planned",
+    )  # planned, executed, failed
+    created_at: Mapped[datetime] = mapped_column(default=_utcnow)
+
+    # 관계
+    rebalance_history: Mapped[RebalanceHistory] = relationship(
+        back_populates="order_details",
+    )
+
+
 class Signal(Base):
     """매매 신호 테이블"""
 

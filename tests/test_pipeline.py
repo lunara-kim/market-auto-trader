@@ -15,7 +15,6 @@ from sqlalchemy.orm import sessionmaker
 
 from src.data.collector import MarketDataCollector
 from src.data.pipeline import CollectionResult, DailyDataPipeline
-from src.exceptions import DataPipelineError
 from src.models.schema import Base, MarketData
 from src.utils.retry import RetryExhaustedError
 

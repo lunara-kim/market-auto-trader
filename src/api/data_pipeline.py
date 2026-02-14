@@ -17,7 +17,7 @@ from datetime import date
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from src.broker.kis_client import get_kis_client
+from src.api.dependencies import get_kis_client
 from src.data.cache import MarketDataCache
 from src.data.collector import MarketDataCollector
 from src.data.pipeline import CollectionResult, DailyDataPipeline

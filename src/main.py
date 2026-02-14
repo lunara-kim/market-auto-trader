@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from config.settings import settings
+from src.api.alerts import router as alerts_router
 from src.api.health import router as health_router
 from src.api.orders import router as orders_router
 from src.api.policies import router as policies_router
@@ -53,6 +54,10 @@ OPENAPI_TAGS = [
     {
         "name": "Rebalancing",
         "description": "포트폴리오 리밸런싱 실행, 내역 조회, 스케줄 관리",
+    },
+    {
+        "name": "Alerts",
+        "description": "알림 규칙 관리 — 손절/목표가 알림, 가격 등락 감지, Discord 연동",
     },
 ]
 
@@ -98,6 +103,7 @@ app.include_router(signals_router)
 app.include_router(policies_router)
 app.include_router(strategy_manager_router)
 app.include_router(rebalancing_router)
+app.include_router(alerts_router)
 
 
 if __name__ == "__main__":

@@ -95,6 +95,14 @@ class DataCollectionError(AppError):
     message = "시장 데이터 수집에 실패했습니다."
 
 
+class DataPipelineError(AppError):
+    """데이터 파이프라인 실행 오류 (500)"""
+
+    status_code = 500
+    code = "DATA_PIPELINE_ERROR"
+    message = "데이터 파이프라인 실행 중 오류가 발생했습니다."
+
+
 class OrderError(AppError):
     """주문 처리 오류 (400)"""
 
@@ -117,6 +125,14 @@ class InsufficientFundsError(OrderError):
     status_code = 400
     code = "INSUFFICIENT_FUNDS"
     message = "주문에 필요한 잔고가 부족합니다."
+
+
+class AlertError(AppError):
+    """알림 관련 오류 (400)"""
+
+    status_code = 400
+    code = "ALERT_ERROR"
+    message = "알림 처리에 실패했습니다."
 
 
 # ──────────────────── Exception Handlers ────────────────

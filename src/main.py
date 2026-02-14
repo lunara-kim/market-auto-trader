@@ -15,6 +15,7 @@ from src.api.policies import router as policies_router
 from src.api.portfolio import router as portfolio_router
 from src.api.routes import router as base_router
 from src.api.signals import router as signals_router
+from src.api.strategy_manager import router as strategy_manager_router
 from src.db import engine
 from src.exceptions import register_exception_handlers
 from src.utils.logger import get_logger
@@ -42,6 +43,10 @@ OPENAPI_TAGS = [
     {
         "name": "policies",
         "description": "원샷 매매 정책 실행 (국내/해외)",
+    },
+    {
+        "name": "Strategies",
+        "description": "복합 전략 매니저 — 다중 전략 신호 종합, 투표, 성과 비교",
     },
 ]
 
@@ -84,6 +89,7 @@ app.include_router(portfolio_router)
 app.include_router(orders_router)
 app.include_router(signals_router)
 app.include_router(policies_router)
+app.include_router(strategy_manager_router)
 
 
 if __name__ == "__main__":

@@ -16,7 +16,6 @@ from src.strategy.moving_average import (
     MAConfig,
     MAType,
     MovingAverageCrossover,
-    SignalType,
     calculate_ema,
     calculate_sma,
 )

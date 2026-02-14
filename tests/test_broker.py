@@ -8,7 +8,7 @@ KISClient 테스트
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -17,7 +17,6 @@ from src.broker.kis_client import (
     BASE_URL_MOCK,
     BASE_URL_PROD,
     KISClient,
-    MIN_REQUEST_INTERVAL,
     ORD_DVSN_LIMIT,
     ORD_DVSN_MARKET,
     TR_ID_BALANCE,
@@ -25,7 +24,7 @@ from src.broker.kis_client import (
     TR_ID_PRICE,
     TR_ID_SELL,
 )
-from src.exceptions import BrokerAuthError, BrokerError, OrderError, ValidationError
+from src.exceptions import BrokerAuthError, BrokerError, ValidationError
 
 
 # ───────────────────── Fixtures ─────────────────────
@@ -417,7 +416,7 @@ class TestPlaceOrder:
             "post",
             side_effect=[mock_hash_resp, mock_order_resp],
         ) as mock_post:
-            result = client.place_order("005930", "sell", 5, price=73000)
+            client.place_order("005930", "sell", 5, price=73000)
 
         # 두 번째 호출 (주문)의 body 확인
         order_call = mock_post.call_args_list[1]

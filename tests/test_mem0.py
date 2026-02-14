@@ -50,7 +50,7 @@ def main():
         collection_name=collection_name,
         vectors_config=VectorParams(size=384, distance=Distance.COSINE),
     )
-    print(f"    ✅ 컬렉션 생성 완료")
+    print("    ✅ 컬렉션 생성 완료")
 
     # 4. 기억 추가 (임베딩 → Qdrant 저장)
     print("\n[4] 기억 추가 (add)...")

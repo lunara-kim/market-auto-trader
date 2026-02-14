@@ -7,18 +7,12 @@ KISClient의 내부 메서드를 모킹하여 외부 API 의존성 없이 테스
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import httpx
 import pytest
 
 from src.broker.kis_client import KISClient
 from src.data.collector import (
-    MAX_DAILY_RECORDS,
-    PERIOD_DAY,
-    PERIOD_MONTH,
-    PERIOD_WEEK,
-    PERIOD_YEAR,
     PATH_DAILY_CHART,
     PATH_MINUTE_CHART,
     TR_ID_DAILY_CHART,

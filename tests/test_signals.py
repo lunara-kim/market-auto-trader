@@ -6,7 +6,7 @@ KISClient + DB를 모킹하여 신호 생성 및 조회 엔드포인트를 검�
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient

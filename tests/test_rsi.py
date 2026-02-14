@@ -13,7 +13,6 @@ import pytest
 from src.strategy.rsi import (
     RSIConfig,
     RSIStrategy,
-    SignalType,
     calculate_rsi,
 )
 

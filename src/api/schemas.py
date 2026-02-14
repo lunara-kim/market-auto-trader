@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ─────────────────────────────────────────────
@@ -325,3 +325,70 @@ class RebalanceToggleRequest(BaseModel):
     """자동 리밸런싱 활성화/비활성화 요청"""
 
     enabled: bool = Field(description="True이면 활성화, False이면 비활성화")
+
+
+# ─────────────────────────────────────────────
+# 알림
+# ─────────────────────────────────────────────
+
+class AlertConditionEnum(str, Enum):
+    """알림 조건 타입"""
+
+    STOP_LOSS = "stop_loss"
+    TARGET_PRICE = "target_price"
+    PRICE_DROP_PCT = "price_drop_pct"
+    PRICE_RISE_PCT = "price_rise_pct"
+    VOLUME_SPIKE = "volume_spike"
+
+
+class AlertCreateRequest(BaseModel):
+    """알림 규칙 생성 요청"""
+
+    stock_code: str = Field(description="종목 코드", min_length=1, max_length=20)
+    stock_name: str | None = Field(default=None, description="종목명")
+    condition: AlertConditionEnum = Field(description="알림 조건")
+    threshold: float = Field(description="임계값 (가격 또는 %)", gt=0)
+    cooldown_minutes: int = Field(default=60, description="재알림 방지 시간(분)", ge=0)
+
+
+class AlertRuleResponse(BaseModel):
+    """알림 규칙 응답"""
+
+    id: int
+    stock_code: str
+    stock_name: str | None
+    condition: AlertConditionEnum
+    threshold: float
+    is_active: bool
+    cooldown_minutes: int
+    created_at: datetime
+    last_triggered_at: datetime | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AlertToggleResponse(BaseModel):
+    """알림 규칙 토글 응답"""
+
+    id: int
+    is_active: bool
+    message: str
+
+
+class AlertCheckRequest(BaseModel):
+    """수동 알림 체크 요청"""
+
+    stock_code: str = Field(description="종목 코드")
+    current_price: float = Field(description="현재가", gt=0)
+    volume: int | None = Field(default=None, description="거래량")
+    previous_close: float | None = Field(default=None, description="전일 종가")
+
+
+class AlertCheckResponse(BaseModel):
+    """수동 알림 체크 응답"""
+
+    stock_code: str
+    current_price: float
+    triggered_count: int
+    triggered_alerts: list[AlertRuleResponse]
+    message: str

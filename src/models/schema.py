@@ -161,3 +161,19 @@ class Signal(Base):
     reason: Mapped[str | None] = mapped_column(Text())  # 신호 생성 사유
     is_executed: Mapped[bool] = mapped_column(default=False)  # 실행 여부
     created_at: Mapped[datetime] = mapped_column(default=_utcnow)
+
+
+class AlertRule(Base):
+    """알림 규칙 테이블"""
+
+    __tablename__ = "alert_rules"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    stock_code: Mapped[str] = mapped_column(String(20), index=True)
+    stock_name: Mapped[str | None] = mapped_column(String(100))
+    condition: Mapped[str] = mapped_column(String(30))  # stop_loss, target_price, etc.
+    threshold: Mapped[float]  # 조건 값 (가격 또는 %)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    last_triggered_at: Mapped[datetime | None] = mapped_column()
+    cooldown_minutes: Mapped[int] = mapped_column(default=60)
+    created_at: Mapped[datetime] = mapped_column(default=_utcnow)

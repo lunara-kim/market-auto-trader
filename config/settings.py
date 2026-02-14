@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # OpenAI 설정
     openai_api_key: str | None = None
 
+    # Discord 알림 설정
+    discord_webhook_url: str = ""
+
     # 앱 설정
     app_env: str = "development"
     log_level: str = "INFO"

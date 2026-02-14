@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from config.settings import settings
+from src.api.health import router as health_router
 from src.api.orders import router as orders_router
 from src.api.policies import router as policies_router
 from src.api.portfolio import router as portfolio_router
@@ -90,6 +91,7 @@ register_exception_handlers(app)
 
 # 라우터 등록
 app.include_router(base_router)
+app.include_router(health_router)
 app.include_router(portfolio_router)
 app.include_router(orders_router)
 app.include_router(signals_router)

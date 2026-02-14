@@ -19,6 +19,7 @@ from src.api.rebalancing import router as rebalancing_router
 from src.api.routes import router as base_router
 from src.api.signals import router as signals_router
 from src.api.strategy_manager import router as strategy_manager_router
+from src.api.data_pipeline import router as data_pipeline_router
 from src.db import engine
 from src.exceptions import register_exception_handlers
 from src.utils.logger import get_logger
@@ -58,6 +59,10 @@ OPENAPI_TAGS = [
     {
         "name": "Alerts",
         "description": "알림 규칙 관리 — 손절/목표가 알림, 가격 등락 감지, Discord 연동",
+    },
+    {
+        "name": "DataPipeline",
+        "description": "시세 데이터 수집, 캐시, 품질 검증 파이프라인",
     },
 ]
 
@@ -104,6 +109,7 @@ app.include_router(policies_router)
 app.include_router(strategy_manager_router)
 app.include_router(rebalancing_router)
 app.include_router(alerts_router)
+app.include_router(data_pipeline_router)
 
 
 if __name__ == "__main__":

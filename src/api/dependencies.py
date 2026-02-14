@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config.settings import settings
 from src.broker.kis_client import KISClient
 from src.db import async_session_factory
-from src.exceptions import BrokerError, ValidationError
+from src.exceptions import ValidationError
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)

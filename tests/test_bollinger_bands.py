@@ -13,7 +13,6 @@ import pytest
 from src.strategy.bollinger_bands import (
     BollingerBandStrategy,
     BollingerConfig,
-    SignalType,
     calculate_bollinger_bands,
 )
 

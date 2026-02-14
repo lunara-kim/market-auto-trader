@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
 from src.api.dependencies import get_kis_client

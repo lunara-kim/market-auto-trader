@@ -6,7 +6,7 @@ KISClient와 DB 세션을 모킹하여 주문 엔드포인트를 검증합니다
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient

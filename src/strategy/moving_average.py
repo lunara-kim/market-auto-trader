@@ -305,7 +305,7 @@ class MovingAverageCrossover(BaseStrategy):
         current_long = analysis_result.get("current_long_ma", 0.0)
         prev_short = analysis_result.get("prev_short_ma", 0.0)
         prev_long = analysis_result.get("prev_long_ma", 0.0)
-        current_price = analysis_result.get("current_price", 0.0)
+        analysis_result.get("current_price", 0.0)
         ma_spread = analysis_result.get("ma_spread", 0.0)
         trend = analysis_result.get("trend", "neutral")
 

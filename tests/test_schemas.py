@@ -4,7 +4,6 @@ API 스키마 Pydantic 모델 테스트
 
 from __future__ import annotations
 
-import pytest
 
 from src.api.schemas import (
     ErrorDetail,

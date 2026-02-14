@@ -20,6 +20,7 @@ from src.api.routes import router as base_router
 from src.api.signals import router as signals_router
 from src.api.strategy_manager import router as strategy_manager_router
 from src.api.data_pipeline import router as data_pipeline_router
+from src.api.trade_report import router as trade_report_router
 from src.db import engine
 from src.exceptions import register_exception_handlers
 from src.utils.logger import get_logger
@@ -63,6 +64,10 @@ OPENAPI_TAGS = [
     {
         "name": "DataPipeline",
         "description": "시세 데이터 수집, 캐시, 품질 검증 파이프라인",
+    },
+    {
+        "name": "Reports",
+        "description": "거래 리포트 — 일일 거래 요약, 포트폴리오 스냅샷, 실현 손익 조회",
     },
 ]
 
@@ -110,6 +115,7 @@ app.include_router(strategy_manager_router)
 app.include_router(rebalancing_router)
 app.include_router(alerts_router)
 app.include_router(data_pipeline_router)
+app.include_router(trade_report_router)
 
 
 if __name__ == "__main__":

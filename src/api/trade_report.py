@@ -95,7 +95,7 @@ class DailyReportResponse(BaseModel):
 def get_daily_report(
     target_date: Annotated[
         date | None,
-        Query(description="조회 날짜 (YYYY-MM-DD). 기본값: 오늘"),
+        Query(alias="date", description="조회 날짜 (YYYY-MM-DD). 기본값: 오늘"),
     ] = None,
     session_factory: sessionmaker = Depends(get_session_factory),
 ) -> DailyReportResponse:

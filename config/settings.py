@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # OpenAI 설정
     openai_api_key: str | None = None
 
+    # 한국투자증권 WebSocket 설정
+    kis_ws_url_prod: str = "wss://ops.koreainvestment.com:21000"
+    kis_ws_url_mock: str = "wss://ops.koreainvestment.com:31000"
+
     # Discord 알림 설정
     discord_webhook_url: str = ""
 

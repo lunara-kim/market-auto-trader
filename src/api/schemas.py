@@ -392,3 +392,75 @@ class AlertCheckResponse(BaseModel):
     triggered_count: int
     triggered_alerts: list[AlertRuleResponse]
     message: str
+
+
+# ─────────────────────────────────────────────
+# 대시보드 (PnL)
+# ─────────────────────────────────────────────
+
+
+class PnLHoldingItem(BaseModel):
+    """보유종목별 PnL 항목"""
+
+    stock_code: str = Field(description="종목 코드")
+    stock_name: str = Field(description="종목명")
+    current_price: float = Field(description="현재가")
+    avg_price: float = Field(description="매입 평균가")
+    quantity: int = Field(description="보유 수량")
+    eval_amount: float = Field(description="평가금액")
+    purchase_amount: float = Field(description="매입금액")
+    profit_loss: float = Field(description="평가손익")
+    profit_loss_rate: float = Field(description="수익률 (%)")
+    weight: float = Field(description="포지션 비중 (%)")
+
+
+class DashboardPnLResponse(BaseModel):
+    """실시간 포트폴리오 손익 현황 응답"""
+
+    holdings: list[PnLHoldingItem] = Field(default_factory=list)
+    total_eval_amount: float = Field(description="총 평가금액")
+    total_purchase_amount: float = Field(description="총 매입금액")
+    total_profit_loss: float = Field(description="총 평가손익")
+    total_profit_loss_rate: float = Field(description="전체 수익률 (%)")
+    daily_change: float = Field(description="전일 대비 변동")
+    updated_at: str = Field(description="조회 시각 (ISO 8601)")
+
+
+class DashboardPerformanceItem(BaseModel):
+    """수익률 추이 항목"""
+
+    date: str = Field(description="날짜 (YYYY-MM-DD)")
+    total_eval: float = Field(description="평가금액")
+    total_purchase: float = Field(description="매입금액")
+    profit_loss: float = Field(description="손익")
+    profit_loss_rate: float = Field(description="수익률 (%)")
+    daily_return: float = Field(description="일일 수익률 (%)")
+
+
+class DashboardPerformanceResponse(BaseModel):
+    """수익률 추이 응답"""
+
+    period: str = Field(description="조회 기간 (daily/weekly)")
+    items: list[DashboardPerformanceItem] = Field(default_factory=list)
+    start_date: str = Field(description="시작일")
+    end_date: str = Field(description="종료일")
+
+
+class DashboardSummaryResponse(BaseModel):
+    """대시보드 종합 요약 응답"""
+
+    total_eval_amount: float = Field(description="총 평가금액")
+    total_purchase_amount: float = Field(description="총 매입금액")
+    total_profit_loss: float = Field(description="총 평가손익")
+    total_profit_loss_rate: float = Field(description="전체 수익률 (%)")
+    cash: float = Field(description="예수금")
+    net_asset: float = Field(description="순자산")
+    holding_count: int = Field(description="보유 종목 수")
+    profit_count: int = Field(description="수익 종목 수")
+    loss_count: int = Field(description="손실 종목 수")
+    even_count: int = Field(description="보합 종목 수")
+    top_holdings: list[PnLHoldingItem] = Field(
+        default_factory=list, description="상위 보유 종목 (최대 5개)",
+    )
+    daily_change: float = Field(description="전일 대비 변동")
+    updated_at: str = Field(description="조회 시각 (ISO 8601)")

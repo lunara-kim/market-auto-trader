@@ -21,6 +21,8 @@ from src.api.signals import router as signals_router
 from src.api.strategy_manager import router as strategy_manager_router
 from src.api.data_pipeline import router as data_pipeline_router
 from src.api.trade_report import router as trade_report_router
+from src.api.streaming import router as streaming_router
+from src.api.dashboard import router as dashboard_router
 from src.db import engine
 from src.exceptions import register_exception_handlers
 from src.utils.logger import get_logger
@@ -69,6 +71,14 @@ OPENAPI_TAGS = [
         "name": "Reports",
         "description": "거래 리포트 — 일일 거래 요약, 포트폴리오 스냅샷, 실현 손익 조회",
     },
+    {
+        "name": "Streaming",
+        "description": "실시간 시세 스트리밍 — WebSocket 기반 실시간 체결가 구독/수신",
+    },
+    {
+        "name": "Dashboard",
+        "description": "실시간 대시보드 — 포트폴리오 PnL, 수익률 추이, 종합 요약",
+    },
 ]
 
 
@@ -116,6 +126,8 @@ app.include_router(rebalancing_router)
 app.include_router(alerts_router)
 app.include_router(data_pipeline_router)
 app.include_router(trade_report_router)
+app.include_router(streaming_router)
+app.include_router(dashboard_router)
 
 
 if __name__ == "__main__":

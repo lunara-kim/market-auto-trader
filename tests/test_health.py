@@ -30,12 +30,20 @@ def test_health_response_schema():
 
 def test_portfolio_requires_credentials():
     """포트폴리오 엔드포인트 — 인증 미설정 시 에러"""
-    response = client.get("/api/v1/portfolio")
-    # KIS 인증 정보 미설정 → ValidationError (422)
-    assert response.status_code == 422
-    data = response.json()
-    assert "error" in data
-    assert data["error"]["code"] == "VALIDATION_ERROR"
+    from unittest.mock import patch
+
+    from config.settings import settings
+
+    # 환경에 실제 인증정보가 있어도 테스트가 동일하게 동작하도록
+    # settings의 KIS 키를 명시적으로 비움
+    with patch.object(settings, "kis_app_key", ""), \
+         patch.object(settings, "kis_app_secret", ""):
+        response = client.get("/api/v1/portfolio")
+        # KIS 인증 정보 미설정 → ValidationError (422)
+        assert response.status_code == 422
+        data = response.json()
+        assert "error" in data
+        assert data["error"]["code"] == "VALIDATION_ERROR"
 
 
 def test_signals_post_requires_body():

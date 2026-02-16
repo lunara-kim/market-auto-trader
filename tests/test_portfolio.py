@@ -204,9 +204,16 @@ class TestGetPortfolioSummary:
 
     def test_no_credentials_error(self) -> None:
         """API 인증 정보 없으면 에러"""
-        # 기본 의존성 (settings에 키 없음)이면 ValidationError (422)
+        from unittest.mock import patch
+
+        from config.settings import settings
+
+        # 기본 의존성 복원 + settings의 KIS 키를 명시적으로 비움
+        # (로컬 .env에 실제 키가 있어도 환경 독립적으로 동작)
         app.dependency_overrides.pop(get_kis_client, None)
 
-        resp = self.client.get("/api/v1/portfolio/summary")
-        assert resp.status_code == 422  # ValidationError → 422
-        assert "error" in resp.json()
+        with patch.object(settings, "kis_app_key", ""), \
+             patch.object(settings, "kis_app_secret", ""):
+            resp = self.client.get("/api/v1/portfolio/summary")
+            assert resp.status_code == 422  # ValidationError → 422
+            assert "error" in resp.json()

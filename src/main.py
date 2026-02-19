@@ -24,6 +24,7 @@ from src.api.trade_report import router as trade_report_router
 from src.api.streaming import router as streaming_router
 from src.api.sentiment import router as sentiment_router
 from src.api.analysis import router as analysis_router
+from src.api.auto_trader import router as auto_trader_router
 from src.api.dashboard import router as dashboard_router
 from src.db import engine
 from src.exceptions import register_exception_handlers
@@ -85,6 +86,10 @@ OPENAPI_TAGS = [
         "name": "Analysis",
         "description": "시장 분석 — 공포탐욕지수, 센티멘트 분석, 매수 강도 배율",
     },
+    {
+        "name": "AutoTrader",
+        "description": "자동매매 엔진 — 센티멘트 + 스크리너 + 기술적 분석 기반 자동 매매",
+    },
 ]
 
 
@@ -136,6 +141,7 @@ app.include_router(streaming_router)
 app.include_router(dashboard_router)
 app.include_router(sentiment_router)
 app.include_router(analysis_router)
+app.include_router(auto_trader_router)
 
 
 if __name__ == "__main__":

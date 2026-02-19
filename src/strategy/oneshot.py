@@ -164,3 +164,73 @@ class OneShotOrderService:
                 "지정가 가격은 0보다 커야 합니다.",
                 detail={"explicit_price": config.explicit_price},
             )
+
+
+@dataclass
+class OneShotSellConfig:
+    """원샷 매도 주문 설정값
+
+    Attributes:
+        stock_code: 6자리 종목 코드 (예: "005930")
+        quantity: 매도 수량 (1 이상 정수)
+        max_notional_krw: 매도 금액 상한 (현재가 * 수량이 이 값을 초과하면 거부)
+        explicit_price: 지정가 주문 시 가격. None이면 시장가 주문.
+    """
+
+    stock_code: str
+    quantity: int
+    max_notional_krw: int
+    explicit_price: int | None = None
+
+
+class OneShotSellService:
+    """국내 주식 단일 매도 주문 실행 서비스
+
+    내부적으로 OneShotOrderService의 검증/현재가 조회 로직을 재사용한다.
+    """
+
+    def __init__(self, kis_client: KISClient) -> None:
+        if not isinstance(kis_client, KISClient):
+            raise ValidationError(
+                "kis_client는 KISClient 인스턴스여야 합니다.",
+                detail={"type": type(kis_client).__name__},
+            )
+        self._client = kis_client
+        self._order_service = OneShotOrderService(kis_client)
+
+    def prepare_sell(self, config: OneShotSellConfig) -> dict[str, Any]:
+        """매도 주문 전 현재가/금액 상한 검증 수행"""
+        order_config = OneShotOrderConfig(
+            stock_code=config.stock_code,
+            quantity=config.quantity,
+            max_notional_krw=config.max_notional_krw,
+            explicit_price=config.explicit_price,
+        )
+        return self._order_service.prepare_order(order_config)
+
+    def execute_sell(self, config: OneShotSellConfig) -> dict[str, Any]:
+        """국내 원샷 매도 주문 실제 실행.
+
+        1. prepare_sell()로 금액/유효성 검증
+        2. 검증 통과 시 KISClient.place_order(order_type="sell") 호출
+        """
+        summary = self.prepare_sell(config)
+
+        result = self._client.place_order(
+            stock_code=config.stock_code,
+            order_type="sell",
+            quantity=config.quantity,
+            price=config.explicit_price,
+        )
+
+        logger.info(
+            "원샷 매도 주문 실행 완료: %s %d주 (주문번호: %s)",
+            config.stock_code,
+            config.quantity,
+            result.get("ODNO", "N/A"),
+        )
+
+        return {
+            "summary": summary,
+            "raw_result": result,
+        }

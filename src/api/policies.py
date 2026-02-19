@@ -14,7 +14,12 @@ from pydantic import BaseModel, Field
 from config.settings import settings
 from src.broker.kis_client import KISClient
 from src.exceptions import ValidationError
-from src.strategy.oneshot import OneShotOrderConfig, OneShotOrderService
+from src.strategy.oneshot import (
+    OneShotOrderConfig,
+    OneShotOrderService,
+    OneShotSellConfig,
+    OneShotSellService,
+)
 from src.strategy.oneshot_overseas import (
     OneShotOverseasOrderConfig,
     OneShotOverseasOrderService,
@@ -113,6 +118,70 @@ async def execute_oneshot_policy(payload: OneShotOrderRequest) -> OneShotOrderRe
         result = service.execute_order(config)
 
         return OneShotOrderResponse(**result)
+
+
+# ───────────────────── Domestic Oneshot Sell ─────────────────────
+
+
+class OneShotSellRequest(BaseModel):
+    """국내 원샷 매도 주문 요청 스키마"""
+
+    stock_code: str = Field(..., description="6자리 종목 코드", min_length=6, max_length=6)
+    quantity: int = Field(..., description="매도 수량 (1 이상)", ge=1)
+    max_notional_krw: int = Field(
+        ..., description="매도 금액 상한 (현재가 * 수량이 이 값을 초과하면 거부)", gt=0
+    )
+    explicit_price: int | None = Field(
+        None,
+        description="지정가 매도 가격. None이면 시장가 주문.",
+    )
+    dry_run: bool = Field(
+        True,
+        description="True면 실제 주문은 보내지 않고 금액/유효성 검증만 수행",
+    )
+
+
+class OneShotSellResponse(BaseModel):
+    """국내 원샷 매도 주문 응답 스키마"""
+
+    summary: dict[str, Any]
+    raw_result: dict[str, Any] | None = None
+
+
+@router.post("/oneshot/sell", response_model=OneShotSellResponse)
+async def execute_oneshot_sell_policy(
+    payload: OneShotSellRequest,
+) -> OneShotSellResponse:
+    """국내 주식 원샷 **매도** 정책 실행 엔드포인트
+
+    - dry_run=True(default): 현재가 조회 + 금액 상한 검증만 수행
+    - dry_run=False: 실제 매도 주문까지 수행
+    """
+
+    logger.info(
+        "원샷 매도 정책 실행 요청: %s %d주",
+        payload.stock_code,
+        payload.quantity,
+    )
+
+    with _create_kis_client_from_settings() as client:
+        service = OneShotSellService(client)
+        config = OneShotSellConfig(
+            stock_code=payload.stock_code,
+            quantity=payload.quantity,
+            max_notional_krw=payload.max_notional_krw,
+            explicit_price=payload.explicit_price,
+        )
+
+        summary = service.prepare_sell(config)
+
+        if payload.dry_run:
+            logger.info("원샷 매도 정책 dry_run 완료 (주문 미발송): %s", summary)
+            return OneShotSellResponse(summary=summary, raw_result=None)
+
+        result = service.execute_sell(config)
+
+        return OneShotSellResponse(**result)
 
 
 # ───────────────────── Overseas Oneshot ─────────────────────

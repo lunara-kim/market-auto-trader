@@ -23,6 +23,7 @@ from src.api.data_pipeline import router as data_pipeline_router
 from src.api.trade_report import router as trade_report_router
 from src.api.streaming import router as streaming_router
 from src.api.sentiment import router as sentiment_router
+from src.api.analysis import router as analysis_router
 from src.api.dashboard import router as dashboard_router
 from src.db import engine
 from src.exceptions import register_exception_handlers
@@ -134,6 +135,7 @@ app.include_router(trade_report_router)
 app.include_router(streaming_router)
 app.include_router(dashboard_router)
 app.include_router(sentiment_router)
+app.include_router(analysis_router)
 
 
 if __name__ == "__main__":

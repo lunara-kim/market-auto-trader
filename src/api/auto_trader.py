@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from src.api.dependencies import get_kis_client
 from src.broker.kis_client import KISClient
 from src.strategy.auto_trader import AutoTrader, AutoTraderConfig, RiskLimits
+from src.strategy.auto_trader_scheduler import AutoTraderScheduler
 
 router = APIRouter(
     prefix="/api/v1/auto-trader",
@@ -22,6 +23,18 @@ router = APIRouter(
 
 # 모듈 수준 설정 (PUT으로 변경 가능)
 _current_config = AutoTraderConfig()
+
+# 모듈 수준 스케줄러 인스턴스 (싱글턴)
+_scheduler: AutoTraderScheduler | None = None
+
+
+def _get_scheduler(client: KISClient) -> AutoTraderScheduler:
+    """스케줄러 싱글턴 반환"""
+    global _scheduler
+    if _scheduler is None:
+        trader = AutoTrader(client, _current_config)
+        _scheduler = AutoTraderScheduler(trader)
+    return _scheduler
 
 
 # ───────────────── Schemas ─────────────────
@@ -165,3 +178,84 @@ def update_config(
         max_notional_krw=config.max_notional_krw,
     )
     return config
+
+
+# ───────────────── Scheduler Schemas ─────────────────
+
+
+class SchedulerStartRequest(BaseModel):
+    interval_minutes: int = Field(default=30, ge=1, le=480)
+    kr_market_only: bool = True
+    us_market: bool = False
+
+
+class SchedulerStatusResponse(BaseModel):
+    is_running: bool
+    interval_minutes: int
+    next_run_time: str | None = None
+    total_cycles: int
+    last_cycle_result: dict[str, Any] | None = None
+    kr_market_hours: str
+    us_market_hours: str | None = None
+
+
+# ───────────────── Scheduler Endpoints ─────────────────
+
+
+@router.post(
+    "/scheduler/start",
+    response_model=SchedulerStatusResponse,
+    summary="스케줄러 시작",
+    description="자동매매 스케줄러를 시작합니다.",
+)
+def scheduler_start(
+    req: SchedulerStartRequest,
+    client: KISClient = Depends(get_kis_client),
+) -> SchedulerStatusResponse:
+    scheduler = _get_scheduler(client)
+    scheduler.start(
+        interval_minutes=req.interval_minutes,
+        kr_market_only=req.kr_market_only,
+        us_market=req.us_market,
+    )
+    return SchedulerStatusResponse(**scheduler.get_status())
+
+
+@router.post(
+    "/scheduler/stop",
+    response_model=SchedulerStatusResponse,
+    summary="스케줄러 중지",
+    description="자동매매 스케줄러를 중지합니다.",
+)
+def scheduler_stop(
+    client: KISClient = Depends(get_kis_client),
+) -> SchedulerStatusResponse:
+    scheduler = _get_scheduler(client)
+    scheduler.stop()
+    return SchedulerStatusResponse(**scheduler.get_status())
+
+
+@router.get(
+    "/scheduler/status",
+    response_model=SchedulerStatusResponse,
+    summary="스케줄러 상태",
+    description="자동매매 스케줄러의 현재 상태를 조회합니다.",
+)
+def scheduler_status(
+    client: KISClient = Depends(get_kis_client),
+) -> SchedulerStatusResponse:
+    scheduler = _get_scheduler(client)
+    return SchedulerStatusResponse(**scheduler.get_status())
+
+
+@router.get(
+    "/scheduler/history",
+    summary="사이클 히스토리",
+    description="최근 사이클 실행 히스토리를 조회합니다.",
+)
+def scheduler_history(
+    limit: int = 10,
+    client: KISClient = Depends(get_kis_client),
+) -> list[dict[str, Any]]:
+    scheduler = _get_scheduler(client)
+    return scheduler.get_cycle_history(limit=limit)

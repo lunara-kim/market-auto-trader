@@ -22,6 +22,7 @@ from src.api.strategy_manager import router as strategy_manager_router
 from src.api.data_pipeline import router as data_pipeline_router
 from src.api.trade_report import router as trade_report_router
 from src.api.streaming import router as streaming_router
+from src.api.sentiment import router as sentiment_router
 from src.api.dashboard import router as dashboard_router
 from src.db import engine
 from src.exceptions import register_exception_handlers
@@ -79,6 +80,10 @@ OPENAPI_TAGS = [
         "name": "Dashboard",
         "description": "실시간 대시보드 — 포트폴리오 PnL, 수익률 추이, 종합 요약",
     },
+    {
+        "name": "Analysis",
+        "description": "시장 분석 — 공포탐욕지수, 센티멘트 분석, 매수 강도 배율",
+    },
 ]
 
 
@@ -128,6 +133,7 @@ app.include_router(data_pipeline_router)
 app.include_router(trade_report_router)
 app.include_router(streaming_router)
 app.include_router(dashboard_router)
+app.include_router(sentiment_router)
 
 
 if __name__ == "__main__":

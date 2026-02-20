@@ -36,14 +36,63 @@ class NewsHeadline:
 
 
 # ---------------------------------------------------------------------------
+# RSS Source Configuration
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class RSSSource:
+    """RSS 소스 설정"""
+
+    url: str
+    category: str = "general"
+
+
+# ---------------------------------------------------------------------------
 # Default RSS Sources
 # ---------------------------------------------------------------------------
 
 DEFAULT_SOURCES: list[str] = [
+    # --- 글로벌 경제 (global_economy) ---
     "https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtdHZHZ0pMVWlnQVAB?hl=ko&gl=KR&ceid=KR:ko",  # Google News 경제
     "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",  # NYT Business
     "https://feeds.bbci.co.uk/news/business/rss.xml",  # BBC Business
+    # --- 국내 경제 (domestic_economy) ---
+    "https://www.hankyung.com/feed/economy",  # 한국경제
+    "https://www.mk.co.kr/rss/30100041/",  # 매일경제 경제
+    "https://www.sedaily.com/rss/economy",  # 서울경제 경제
+    "https://www.yna.co.kr/rss/economy.xml",  # 연합뉴스 경제
+    # --- 증시/증권 키워드 (stock_market) ---
+    "https://news.google.com/rss/search?q=%EC%BD%94%EC%8A%A4%ED%94%BC+%EC%A6%9D%EC%8B%9C&hl=ko&gl=KR&ceid=KR:ko",  # 코스피 증시
+    "https://news.google.com/rss/search?q=%ED%86%A0%EC%8A%A4%EC%A6%9D%EA%B6%8C&hl=ko&gl=KR&ceid=KR:ko",  # 토스증권
+    "https://news.google.com/rss/search?q=%EC%A6%9D%EA%B6%8C%EA%B0%80+%EC%A0%84%EB%A7%9D&hl=ko&gl=KR&ceid=KR:ko",  # 증권가 전망
 ]
+
+# URL → 카테고리 매핑
+_SOURCE_CATEGORIES: dict[str, str] = {
+    "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml": "global_economy",
+    "https://feeds.bbci.co.uk/news/business/rss.xml": "global_economy",
+    "https://www.hankyung.com/feed/economy": "domestic_economy",
+    "https://www.mk.co.kr/rss/30100041/": "domestic_economy",
+    "https://www.sedaily.com/rss/economy": "domestic_economy",
+    "https://www.yna.co.kr/rss/economy.xml": "domestic_economy",
+}
+
+# URL 부분 매칭용 (Google News 키워드 피드)
+_SOURCE_CATEGORY_PATTERNS: list[tuple[str, str]] = [
+    ("news.google.com/rss/search", "stock_market"),
+    ("news.google.com/rss/topics", "domestic_economy"),
+]
+
+
+def _get_source_category(url: str) -> str:
+    """URL 기반으로 소스 카테고리 결정"""
+    if url in _SOURCE_CATEGORIES:
+        return _SOURCE_CATEGORIES[url]
+    for pattern, category in _SOURCE_CATEGORY_PATTERNS:
+        if pattern in url:
+            return category
+    return "general"
 
 
 # ---------------------------------------------------------------------------
@@ -111,17 +160,25 @@ class NewsCollector:
         resp.raise_for_status()
         feed = feedparser.parse(resp.text)
         source_title = feed.feed.get("title", url)
+        source_category = _get_source_category(url)
 
         headlines: list[NewsHeadline] = []
         for entry in feed.entries:
             published_at = self._parse_date(entry)
+            # 엔트리 자체 태그가 있으면 우선, 없으면 소스 카테고리 사용
+            entry_category = self._detect_category(entry)
+            category = (
+                entry_category
+                if entry_category != "general"
+                else source_category
+            )
             headlines.append(
                 NewsHeadline(
                     title=entry.get("title", ""),
                     source=source_title,
                     url=entry.get("link", ""),
                     published_at=published_at,
-                    category=self._detect_category(entry),
+                    category=category,
                 )
             )
         return headlines

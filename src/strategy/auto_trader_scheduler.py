@@ -40,18 +40,23 @@ class AutoTraderScheduler:
             None 인 경우 기본 이벤트 루프 정책을 사용합니다.
         """
         self._trader = auto_trader
+        self._event_loop = event_loop
         # event_loop가 지정되면 AsyncIOScheduler가 get_running_loop()를 호출하지 않고
         # 주어진 루프에 바로 붙기 때문에, FastAPI sync 엔드포인트의 쓰레드풀 컨텍스트에서도
         # "no running event loop" 오류 없이 동작합니다.
-        scheduler_kwargs: dict[str, Any] = {"timezone": KST}
-        if event_loop is not None:
-            scheduler_kwargs["event_loop"] = event_loop
-        self._scheduler = AsyncIOScheduler(**scheduler_kwargs)
+        self._scheduler = self._create_scheduler()
         self._is_running = False
         self._interval_minutes: int = 30
         self._kr_market_only: bool = True
         self._us_market: bool = False
         self._cycle_history: list[dict[str, Any]] = []
+
+    def _create_scheduler(self) -> AsyncIOScheduler:
+        """AsyncIOScheduler 인스턴스를 생성합니다."""
+        kwargs: dict[str, Any] = {"timezone": KST}
+        if self._event_loop is not None:
+            kwargs["event_loop"] = self._event_loop
+        return AsyncIOScheduler(**kwargs)
 
     # ───────────────── 시작 / 중지 ─────────────────
 
@@ -92,8 +97,8 @@ class AutoTraderScheduler:
             return
 
         self._scheduler.shutdown(wait=False)
-        # 새 스케줄러 인스턴스 준비 (재시작 가능하도록)
-        self._scheduler = AsyncIOScheduler(timezone=KST)
+        # 새 스케줄러 인스턴스 준비 (재시작 가능하도록, event_loop 유지)
+        self._scheduler = self._create_scheduler()
         self._is_running = False
         logger.info("AutoTrader 스케줄러 중지")
 

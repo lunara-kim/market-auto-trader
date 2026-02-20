@@ -7,6 +7,7 @@ CNN Fear & Greed Index를 primary로, alternative.me를 fallback으로 사용합
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -216,3 +217,96 @@ class MarketSentiment:
         if score < 75:
             return "reduce"
         return "stop_buy"
+
+
+# ---------------------------------------------------------------------------
+# Hybrid Sentiment
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class HybridSentimentResult:
+    """하이브리드 센티멘트 분석 결과"""
+
+    hybrid_score: float  # -100 ~ +100
+    numeric_score: float  # -100 ~ +100 (정규화된 공포탐욕지수)
+    news_score: float | None  # -100 ~ +100 (뉴스 LLM 스코어)
+    weights: dict[str, float]  # {"numeric": 0.5, "news": 0.5}
+    news_available: bool
+    news_urgency: str | None  # highest urgency from news analyses
+    fear_greed_raw: SentimentResult  # 원본 공포탐욕지수
+
+
+class HybridSentimentAnalyzer:
+    """수치 지표(FearGreedIndex) + 뉴스 LLM 분석을 가중 합산하는 하이브리드 센티멘트"""
+
+    def __init__(
+        self,
+        fear_greed: FearGreedIndex | None = None,
+        numeric_weight: float = 0.5,
+        news_weight: float = 0.5,
+    ) -> None:
+        self._fear_greed = fear_greed or FearGreedIndex()
+        self._numeric_weight = numeric_weight
+        self._news_weight = news_weight
+
+    @staticmethod
+    def normalize_fear_greed(score: int) -> float:
+        """0~100 스케일 → -100~+100 (50=중립)"""
+        return (score - 50) * 2.0
+
+    def analyze(self) -> HybridSentimentResult:
+        """하이브리드 센티멘트 분석
+
+        OPENAI_API_KEY가 없거나 뉴스 분석 실패 시 numeric 100% fallback.
+        """
+        fg = self._fear_greed.fetch()
+        numeric_score = self.normalize_fear_greed(fg.score)
+
+        # 뉴스 분석 시도
+        news_score: float | None = None
+        news_urgency: str | None = None
+        news_available = False
+
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        if api_key:
+            try:
+                from src.analysis.news_collector import NewsCollector
+                from src.analysis.news_sentiment import NewsSentimentAnalyzer
+
+                collector = NewsCollector()
+                headlines = collector.collect_all()
+                if headlines:
+                    analyzer = NewsSentimentAnalyzer(api_key=api_key)
+                    result = analyzer.analyze_news_sentiment(headlines)
+                    news_score = float(result.overall_score)
+                    news_available = True
+                    # highest urgency
+                    urgency_order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+                    max_urgency = "low"
+                    for a in result.analyses:
+                        if urgency_order.get(a.urgency, 0) > urgency_order.get(max_urgency, 0):
+                            max_urgency = a.urgency
+                    news_urgency = max_urgency
+            except Exception:
+                logger.warning("뉴스 센티멘트 분석 실패, numeric only fallback")
+
+        # 가중 합산
+        if news_available and news_score is not None:
+            hybrid = self._numeric_weight * numeric_score + self._news_weight * news_score
+            weights = {"numeric": self._numeric_weight, "news": self._news_weight}
+        else:
+            hybrid = numeric_score
+            weights = {"numeric": 1.0, "news": 0.0}
+
+        hybrid = max(-100.0, min(100.0, hybrid))
+
+        return HybridSentimentResult(
+            hybrid_score=hybrid,
+            numeric_score=numeric_score,
+            news_score=news_score,
+            weights=weights,
+            news_available=news_available,
+            news_urgency=news_urgency,
+            fear_greed_raw=fg,
+        )

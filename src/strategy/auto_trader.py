@@ -13,7 +13,12 @@ from enum import Enum
 from typing import Any
 
 from src.analysis.screener import StockScreener
-from src.analysis.sentiment import MarketSentiment, MarketSentimentResult
+from src.analysis.sentiment import (
+    HybridSentimentAnalyzer,
+    HybridSentimentResult,
+    MarketSentiment,
+    MarketSentimentResult,
+)
 from src.analysis.universe import UniverseManager
 from src.broker.kis_client import KISClient
 from src.strategy.oneshot import OneShotOrderConfig, OneShotOrderService
@@ -51,6 +56,7 @@ class TradeSignal:
     technical_score: float  # RSI/볼린저 기여분
     reason: str
     recommended_action: str  # "buy 1주 @ 189,200원" 등
+    warnings: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -87,6 +93,7 @@ class AutoTrader:
         self._client = kis_client
         self._config = config or AutoTraderConfig()
         self._sentiment = MarketSentiment()
+        self._hybrid_sentiment = HybridSentimentAnalyzer()
         self._screener = StockScreener(kis_client)
         self._universe = UniverseManager()
         self._daily_trade_count = 0
@@ -100,21 +107,27 @@ class AutoTrader:
     def scan_universe(self) -> list[TradeSignal]:
         """유니버스 전체 스캔 → 시그널 생성
 
-        1. 시장 센티멘트 조회
+        1. 하이브리드 센티멘트 조회
         2. 유니버스 종목 순회
         3. 각 종목: PER 품질 판단 → 기술적 분석 → 점수 합산
         4. 시그널 리스트 반환 (점수 내림차순)
         """
+        hybrid_result = self._hybrid_sentiment.analyze()
         sentiment_result = self._sentiment.analyze()
         universe = self._universe.get_universe(self._config.universe_name)
         if universe is None:
             logger.warning("유니버스 '%s' 없음", self._config.universe_name)
             return []
 
+        # critical urgency → 거래 스킵
+        if hybrid_result.news_urgency == "critical":
+            logger.warning("뉴스 urgency=critical, 거래 스킵 (리스크 관리)")
+            return []
+
         signals: list[TradeSignal] = []
         for stock_code in universe.stock_codes:
             try:
-                signal = self.calculate_signal(stock_code, sentiment_result)
+                signal = self.calculate_signal(stock_code, sentiment_result, hybrid_result)
                 signals.append(signal)
             except Exception:
                 logger.exception("시그널 계산 실패: %s", stock_code)
@@ -131,11 +144,14 @@ class AutoTrader:
     # ───────────────── 시그널 계산 ─────────────────
 
     def calculate_signal(
-        self, stock_code: str, sentiment_result: MarketSentimentResult
+        self,
+        stock_code: str,
+        sentiment_result: MarketSentimentResult,
+        hybrid_result: HybridSentimentResult | None = None,
     ) -> TradeSignal:
         """단일 종목 시그널 계산
 
-        - 센티멘트 점수: -30 ~ +30 (공포탐욕지수 기반)
+        - 센티멘트 점수: -30 ~ +30 (하이브리드 센티멘트 기반)
         - PER 품질 점수: 0 or +25 (eligible이면 +25, 아니면 0으로 HOLD)
         - RSI 점수: -20 ~ +20
         - 볼린저 점수: -15 ~ +15
@@ -158,9 +174,15 @@ class AutoTrader:
                 recommended_action="hold",
             )
 
-        # 2. 센티멘트 점수: score 0~100 → -30 ~ +30
-        fg_score = sentiment_result.fear_greed.score
-        sentiment_score = (50 - fg_score) * 0.6  # 공포일수록 높은 점수
+        # 2. 센티멘트 점수: hybrid_score → -30 ~ +30
+        if hybrid_result is not None:
+            # hybrid_score / 100 * 30 → ±30
+            # 부호 반전: 공포(음수) → 매수 기회(양수)
+            sentiment_score = -hybrid_result.hybrid_score / 100.0 * 30.0
+        else:
+            # fallback: 기존 방식
+            fg_score = sentiment_result.fear_greed.score
+            sentiment_score = (50 - fg_score) * 0.6  # 공포일수록 높은 점수
 
         # 3. 품질 점수: eligible이면 +25
         quality_score = 25.0
@@ -470,7 +492,7 @@ class AutoTrader:
         timestamp = datetime.now(tz=timezone.utc).isoformat()
         sentiment_result = self._sentiment.analyze()
 
-        # 매수 스캔
+        # 매수 스캔 (hybrid sentiment는 scan_universe 내부에서 조회)
         buy_signals = self.scan_universe()
         executed_buys = self.execute_signals(buy_signals)
 

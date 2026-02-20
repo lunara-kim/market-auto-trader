@@ -47,6 +47,14 @@ KOSPI_TOP30: list[str] = [
     "030200",  # KT
 ]
 
+# US 시가총액 상위 30 종목
+US_TOP30: list[str] = [
+    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK.B",
+    "UNH", "JNJ", "V", "XOM", "JPM", "WMT", "PG", "MA", "HD", "CVX",
+    "MRK", "ABBV", "LLY", "PEP", "KO", "COST", "AVGO", "TMO", "CSCO",
+    "ACN", "MCD", "DHR",
+]
+
 # 기본 감시 종목 (KOSPI TOP 10)
 DEFAULT_WATCHLIST: list[str] = KOSPI_TOP30[:10]
 
@@ -69,6 +77,11 @@ class UniverseManager:
                 name="kospi_top30",
                 stock_codes=list(KOSPI_TOP30),
                 description="KOSPI 시가총액 상위 30",
+            ),
+            "us_top30": StockUniverse(
+                name="us_top30",
+                stock_codes=list(US_TOP30),
+                description="US 시가총액 상위 30",
             ),
             "default_watchlist": StockUniverse(
                 name="default_watchlist",

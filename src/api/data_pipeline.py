@@ -242,7 +242,7 @@ async def get_quality_report(
                 date=issue.date,
                 issue_type=issue.issue_type,
                 description=issue.description,
-                severity=issue.severity.value,
+                severity=issue.severity,
             )
             for issue in all_issues
         ],

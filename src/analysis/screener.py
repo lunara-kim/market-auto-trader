@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from src.analysis.stock_data import STOCK_FINANCIALS, STOCK_SECTOR_MAP
+from src.analysis.stock_data import STOCK_EXCHANGE_MAP, STOCK_FINANCIALS, STOCK_SECTOR_MAP
 from src.broker.kis_client import KISClient
 from src.utils.logger import get_logger
 
@@ -134,7 +134,8 @@ class StockScreener:
             pbr = float(price_data.get("pbr", 0) or 0)
             stock_name = price_data.get("hts_kor_isnm", stock_code)
         else:
-            price_data = self._client.get_overseas_price(stock_code)
+            exchange_code = STOCK_EXCHANGE_MAP.get(stock_code, "NASD")
+            price_data = self._client.get_overseas_price(stock_code, exchange_code)
             per = float(price_data.get("per", 0) or 0)
             pbr = float(price_data.get("pbr", 0) or 0)
             stock_name = price_data.get("rsym", stock_code)

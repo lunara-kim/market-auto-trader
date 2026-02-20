@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -84,7 +84,7 @@ class TestHybridAnalyze:
                 patch("src.analysis.news_collector.NewsCollector") as mock_collector_cls,
                 patch("src.analysis.news_sentiment.NewsSentimentAnalyzer") as mock_analyzer_cls,
             ):
-                mock_collector_cls.return_value.collect_all.return_value = [MagicMock()]
+                mock_collector_cls.return_value.fetch_headlines = AsyncMock(return_value=[MagicMock()])
                 mock_analyzer_cls.return_value.analyze_news_sentiment.return_value = news_result
 
                 result = analyzer.analyze()
@@ -119,7 +119,7 @@ class TestHybridAnalyze:
                 patch("src.analysis.news_collector.NewsCollector") as mock_collector_cls,
                 patch("src.analysis.news_sentiment.NewsSentimentAnalyzer") as mock_analyzer_cls,
             ):
-                mock_collector_cls.return_value.collect_all.return_value = [MagicMock()]
+                mock_collector_cls.return_value.fetch_headlines = AsyncMock(return_value=[MagicMock()])
                 mock_analyzer_cls.return_value.analyze_news_sentiment.return_value = news_result
 
                 result = analyzer.analyze()
@@ -152,7 +152,7 @@ class TestHybridAnalyze:
 
         with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
             with patch("src.analysis.news_collector.NewsCollector") as mock_collector_cls:
-                mock_collector_cls.return_value.collect_all.side_effect = Exception("fail")
+                mock_collector_cls.return_value.fetch_headlines = AsyncMock(side_effect=Exception("fail"))
                 result = analyzer.analyze()
 
         assert result.news_available is False
@@ -187,7 +187,7 @@ class TestHybridAnalyze:
                 patch("src.analysis.news_collector.NewsCollector") as mock_collector_cls,
                 patch("src.analysis.news_sentiment.NewsSentimentAnalyzer") as mock_analyzer_cls,
             ):
-                mock_collector_cls.return_value.collect_all.return_value = [MagicMock()]
+                mock_collector_cls.return_value.fetch_headlines = AsyncMock(return_value=[MagicMock()])
                 mock_analyzer_cls.return_value.analyze_news_sentiment.return_value = news_result
 
                 result = analyzer.analyze()
@@ -213,7 +213,7 @@ class TestHybridAnalyze:
                 patch("src.analysis.news_collector.NewsCollector") as mock_collector_cls,
                 patch("src.analysis.news_sentiment.NewsSentimentAnalyzer") as mock_analyzer_cls,
             ):
-                mock_collector_cls.return_value.collect_all.return_value = [MagicMock()]
+                mock_collector_cls.return_value.fetch_headlines = AsyncMock(return_value=[MagicMock()])
                 mock_analyzer_cls.return_value.analyze_news_sentiment.return_value = news_result
 
                 result = analyzer.analyze()

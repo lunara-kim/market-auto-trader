@@ -7,6 +7,7 @@ CNN Fear & Greed Index를 primary로, alternative.me를 fallback으로 사용합
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from dataclasses import dataclass
@@ -275,7 +276,7 @@ class HybridSentimentAnalyzer:
                 from src.analysis.news_sentiment import NewsSentimentAnalyzer
 
                 collector = NewsCollector()
-                headlines = collector.collect_all()
+                headlines = asyncio.run(collector.fetch_headlines())
                 if headlines:
                     analyzer = NewsSentimentAnalyzer(api_key=api_key)
                     result = analyzer.analyze_news_sentiment(headlines)

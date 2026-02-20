@@ -77,6 +77,19 @@ STOCK_SECTOR_MAP: dict[str, str] = {
     "DHR": "헬스케어",
 }
 
+# ───────────────── 해외 종목 → 거래소 코드 매핑 ─────────────────
+
+STOCK_EXCHANGE_MAP: dict[str, str] = {
+    "AAPL": "NASD", "MSFT": "NASD", "GOOGL": "NASD", "AMZN": "NASD",
+    "NVDA": "NASD", "META": "NASD", "TSLA": "NASD", "AVGO": "NASD",
+    "COST": "NASD", "CSCO": "NASD", "PEP": "NASD", "TMO": "NYSE",
+    "ACN": "NYSE", "MCD": "NYSE", "DHR": "NYSE",
+    "BRK.B": "NYSE", "UNH": "NYSE", "JNJ": "NYSE", "V": "NYSE",
+    "XOM": "NYSE", "JPM": "NYSE", "WMT": "NYSE", "PG": "NYSE",
+    "MA": "NYSE", "HD": "NYSE", "CVX": "NYSE", "MRK": "NYSE",
+    "ABBV": "NYSE", "LLY": "NYSE", "KO": "NYSE",
+}
+
 # ───────────────── 종목별 재무지표 (근사치) ─────────────────
 
 STOCK_FINANCIALS: dict[str, dict[str, float]] = {

@@ -49,13 +49,20 @@ class BacktestConfig:
     initial_capital: float = 10_000_000.0
     take_profit: float = 0.10  # +10%
     stop_loss: float = -0.05  # -5%
-    max_position_pct: float = 0.2  # 20%
+    max_position_pct: float = 1.0  # 종목별 자본 대비 최대 투자 비중
     sentiment_bias: float = 0.0  # 백테스트용 고정 센티멘트 점수 (기본 중립)
     use_sentiment: bool = False  # 히스토리컬 Fear & Greed 사용 여부
     use_per: bool = False  # 히스토리컬 PER quality 사용 여부
-    min_trade_interval_days: int = 0  # 같은 종목 재진입까지 최소 대기일 (0=제한없음)
-    buy_threshold: float = 35.0  # 매수 최소 점수
+    min_trade_interval_days: int = 5  # 같은 종목 재진입까지 최소 대기일
+    buy_threshold: float = 10.0  # 매수 최소 점수
     sell_threshold: float = -20.0  # 매도 최대 점수
+    # 추세 필터: 이동평균선 기반 매수 필터
+    use_trend_filter: bool = False  # 추세 필터 사용 여부
+    trend_ma_short: int = 20  # 단기 이동평균 기간
+    trend_ma_long: int = 50  # 장기 이동평균 기간
+    # 트레일링 스톱: 최고가 대비 하락률로 손절
+    use_trailing_stop: bool = True  # 트레일링 스톱 사용 여부
+    trailing_stop_pct: float = -0.05  # 최고가 대비 하락 허용 비율
 
 
 @dataclass(slots=True)
@@ -211,16 +218,28 @@ class BacktestEngine:
         else:
             quality_score = 0.0
 
+        # 이동평균 계산 (추세 필터용)
+        ma_short_period = self._config.trend_ma_short
+        ma_long_period = self._config.trend_ma_long
+        ma_short = [0.0] * len(closes)
+        ma_long = [0.0] * len(closes)
+        for i in range(len(closes)):
+            if i >= ma_short_period - 1:
+                ma_short[i] = sum(closes[i - ma_short_period + 1 : i + 1]) / ma_short_period
+            if i >= ma_long_period - 1:
+                ma_long[i] = sum(closes[i - ma_long_period + 1 : i + 1]) / ma_long_period
+
         capital = initial_capital
         shares = 0
         entry_price = 0.0
+        peak_price = 0.0  # 트레일링 스톱용 최고가
         last_sell_idx: int | None = None  # 마지막 매도 인덱스 (재진입 방지용)
 
         trades: list[BacktestTrade] = []
         equity_curve: list[dict[str, float]] = []
 
-        # 최소 필요한 인덱스 (RSI, 볼린저 모두 유효한 이후부터)
-        start_idx = max(14 + 1, 20)  # RSI는 period+1, 볼린저는 period 이후부터 의미 있음
+        # 최소 필요한 인덱스 (RSI, 볼린저, MA 모두 유효한 이후부터)
+        start_idx = max(14 + 1, 20, ma_long_period)  # RSI는 period+1, 볼린저는 period, MA는 장기기간 이후
         if len(closes) <= start_idx:
             logger.warning("백테스트: %s — 유효한 캔들이 부족합니다 (%d개)", symbol, len(closes))
 
@@ -260,7 +279,14 @@ class BacktestEngine:
             bollinger_score = (0.5 - percent_b) * 30.0
             bollinger_score = max(-15.0, min(15.0, bollinger_score))
 
-            technical_score = rsi_score + bollinger_score
+            # 추세 점수: 가격이 장기 MA 위이면 보너스, 아래면 패널티
+            trend_score = 0.0
+            if self._config.use_trend_filter and ma_long[i] > 0:
+                ma_ratio = (price - ma_long[i]) / ma_long[i]
+                # MA 위: +10 보너스, MA 아래: -10 패널티 (최대 ±10)
+                trend_score = max(-10.0, min(10.0, ma_ratio * 100))
+
+            technical_score = rsi_score + bollinger_score + trend_score
             total_score = sentiment_score + quality_score + technical_score
             total_score = max(-100.0, min(100.0, total_score))
 
@@ -274,6 +300,12 @@ class BacktestEngine:
 
             # 포지션 진입 조건
             if shares == 0 and is_buy_signal:
+                # 추세 필터: 강한 하락 추세에서 매수 방지
+                if self._config.use_trend_filter and ma_long[i] > 0:
+                    # 가격이 장기 MA 대비 3% 이상 아래면 매수 스킵
+                    if price < ma_long[i] * 0.97:
+                        continue
+
                 # min_trade_interval_days 체크
                 if (
                     self._config.min_trade_interval_days > 0
@@ -290,6 +322,7 @@ class BacktestEngine:
                 capital -= cost
                 shares = qty
                 entry_price = price
+                peak_price = price
                 trades.append(
                     BacktestTrade(
                         symbol=symbol,
@@ -303,9 +336,20 @@ class BacktestEngine:
 
             # 포지션 청산 조건
             if shares > 0:
+                # 트레일링 스톱: 최고가 추적
+                if price > peak_price:
+                    peak_price = price
+
                 pnl_pct = (price - entry_price) / entry_price
                 should_take_profit = pnl_pct >= self._config.take_profit
-                should_stop_loss = pnl_pct <= self._config.stop_loss
+
+                # 트레일링 스톱 또는 고정 손절
+                if self._config.use_trailing_stop:
+                    trailing_pnl = (price - peak_price) / peak_price
+                    should_stop_loss = trailing_pnl <= self._config.trailing_stop_pct
+                else:
+                    should_stop_loss = pnl_pct <= self._config.stop_loss
+
                 should_sell_signal = is_sell_signal
 
                 if should_take_profit or should_stop_loss or should_sell_signal:

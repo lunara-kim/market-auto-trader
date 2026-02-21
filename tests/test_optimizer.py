@@ -91,8 +91,8 @@ class TestMinTradeIntervalDays:
         assert hasattr(config, "min_trade_interval_days")
         assert hasattr(config, "buy_threshold")
         assert hasattr(config, "sell_threshold")
-        assert config.min_trade_interval_days == 0
-        assert config.buy_threshold == 35.0
+        assert config.min_trade_interval_days == 5
+        assert config.buy_threshold == 10.0
         assert config.sell_threshold == -20.0
 
 
@@ -108,18 +108,20 @@ class TestParameterOptimizer:
             stop_loss=[-0.07],
             take_profit=[0.15],
             min_trade_interval_days=[0],
+            trailing_stop_pct=[-0.05],
+            max_position_pct=[1.0],
         )
         optimizer = ParameterOptimizer(symbol_data=data)
         results = optimizer.optimize(grid=grid, metric="sharpe_ratio")
 
-        assert len(results) == 4  # 2 * 2 * 1 * 1 * 1
+        assert len(results) == 4  # 2 * 2 * 1 * 1 * 1 * 1 * 1
         # 내림차순 정렬 확인
         for i in range(len(results) - 1):
             assert results[i].sharpe_ratio >= results[i + 1].sharpe_ratio
 
     def test_total_combinations(self):
         grid = ParamGrid()
-        assert grid.total_combinations() == 4 * 4 * 4 * 4 * 4  # 1024
+        assert grid.total_combinations() == 4 * 4 * 4 * 4 * 4 * 4 * 3  # 12288
 
     def test_format_report(self):
         results = [

@@ -29,6 +29,7 @@ from src.api.analysis import router as analysis_router
 from src.api.news import router as news_router
 from src.api.auto_trader import router as auto_trader_router
 from src.api.dashboard import router as dashboard_router
+from src.api.backtest import router as backtest_router
 from src.db import engine
 from src.exceptions import register_exception_handlers
 from src.utils.logger import get_logger
@@ -93,6 +94,10 @@ OPENAPI_TAGS = [
         "name": "AutoTrader",
         "description": "자동매매 엔진 — 센티멘트 + 스크리너 + 기술적 분석 기반 자동 매매",
     },
+    {
+        "name": "Backtest",
+        "description": "백테스트 — 시그널 스코어링을 과거 데이터에 적용해 성과 검증",
+    },
 ]
 
 
@@ -150,6 +155,7 @@ app.include_router(sentiment_router)
 app.include_router(analysis_router)
 app.include_router(news_router)
 app.include_router(auto_trader_router)
+app.include_router(backtest_router)
 
 
 if __name__ == "__main__":

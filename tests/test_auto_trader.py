@@ -522,10 +522,11 @@ class TestAutoTraderAPI:
                 "max_position_pct": 0.2,
                 "max_total_position_pct": 0.8,
                 "max_daily_loss_pct": 0.03,
-                "min_signal_score_buy": 40.0,
-                "max_signal_score_sell": -30.0,
+                "min_signal_score_buy": 35.0,
+                "max_signal_score_sell": -20.0,
             },
             "dry_run": True,
             "max_notional_krw": 5_000_000,
+            "min_trade_interval_days": 5,
         }
         client.put("/api/v1/auto-trader/config", json=default_config)

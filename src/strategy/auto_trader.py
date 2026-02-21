@@ -67,8 +67,8 @@ class RiskLimits:
     max_position_pct: float = 0.2  # 종목당 최대 투자 비중 20%
     max_total_position_pct: float = 0.8  # 총 포지션 한도 80%
     max_daily_loss_pct: float = 0.03  # 일일 최대 손실 3%
-    min_signal_score_buy: float = 40.0  # 매수 최소 점수
-    max_signal_score_sell: float = -30.0  # 매도 최대 점수
+    min_signal_score_buy: float = 35.0  # 매수 최소 점수
+    max_signal_score_sell: float = -20.0  # 매도 최대 점수
 
 
 @dataclass
@@ -79,6 +79,7 @@ class AutoTraderConfig:
     risk_limits: RiskLimits = field(default_factory=RiskLimits)
     dry_run: bool = True  # 기본값 True!
     max_notional_krw: int = 5_000_000  # 종목당 최대 500만원
+    min_trade_interval_days: int = 5  # 같은 종목 재진입까지 최소 대기일
 
 
 # ---------------------------------------------------------------------------
@@ -267,11 +268,11 @@ class AutoTrader:
         """점수 → 시그널 타입"""
         if score > 70:
             return SignalType.STRONG_BUY
-        if score > 40:
+        if score > 35:
             return SignalType.BUY
         if score < -60:
             return SignalType.STRONG_SELL
-        if score < -30:
+        if score < -20:
             return SignalType.SELL
         return SignalType.HOLD
 
@@ -430,8 +431,8 @@ class AutoTrader:
             pnl_rate = float(holding.get("evlu_pfls_rt", 0) or 0)
             current_price = int(holding.get("prpr", 0) or 0)
 
-            # 익절: +15% 이상
-            if pnl_rate >= 15.0:
+            # 익절: +10% 이상
+            if pnl_rate >= 10.0:
                 sell_signals.append(
                     TradeSignal(
                         stock_code=stock_code,
@@ -441,14 +442,14 @@ class AutoTrader:
                         sentiment_score=0.0,
                         quality_score=0.0,
                         technical_score=0.0,
-                        reason=f"익절: 수익률 {pnl_rate:+.1f}% ≥ 15%",
+                        reason=f"익절: 수익률 {pnl_rate:+.1f}% ≥ 10%",
                         recommended_action=f"sell {qty}주 @ {current_price:,}원",
                     )
                 )
                 continue
 
-            # 손절: -7% 이하
-            if pnl_rate <= -7.0:
+            # 손절: -5% 이하
+            if pnl_rate <= -5.0:
                 sell_signals.append(
                     TradeSignal(
                         stock_code=stock_code,
@@ -458,7 +459,7 @@ class AutoTrader:
                         sentiment_score=0.0,
                         quality_score=0.0,
                         technical_score=0.0,
-                        reason=f"손절: 수익률 {pnl_rate:+.1f}% ≤ -7%",
+                        reason=f"손절: 수익률 {pnl_rate:+.1f}% ≤ -5%",
                         recommended_action=f"sell {qty}주 @ {current_price:,}원",
                     )
                 )

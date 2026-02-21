@@ -23,8 +23,6 @@ from src.analysis.screener import StockScreener
 from src.backtest.historical_per import HistoricalPERCalculator
 from src.backtest.historical_sentiment import HistoricalFearGreedLoader
 from src.broker.kis_client import KISClient
-from src.strategy.auto_trader import SignalType as AutoSignalType
-from src.strategy.auto_trader import AutoTrader
 from src.strategy.rsi import calculate_rsi
 from src.strategy.bollinger_bands import calculate_bollinger_bands
 from src.utils.logger import get_logger
@@ -49,12 +47,15 @@ class BacktestConfig:
     """백테스트 설정."""
 
     initial_capital: float = 10_000_000.0
-    take_profit: float = 0.15  # +15%
-    stop_loss: float = -0.07  # -7%
+    take_profit: float = 0.10  # +10%
+    stop_loss: float = -0.05  # -5%
     max_position_pct: float = 0.2  # 20%
     sentiment_bias: float = 0.0  # 백테스트용 고정 센티멘트 점수 (기본 중립)
     use_sentiment: bool = False  # 히스토리컬 Fear & Greed 사용 여부
     use_per: bool = False  # 히스토리컬 PER quality 사용 여부
+    min_trade_interval_days: int = 0  # 같은 종목 재진입까지 최소 대기일 (0=제한없음)
+    buy_threshold: float = 35.0  # 매수 최소 점수
+    sell_threshold: float = -20.0  # 매도 최대 점수
 
 
 @dataclass(slots=True)
@@ -213,6 +214,7 @@ class BacktestEngine:
         capital = initial_capital
         shares = 0
         entry_price = 0.0
+        last_sell_idx: int | None = None  # 마지막 매도 인덱스 (재진입 방지용)
 
         trades: list[BacktestTrade] = []
         equity_curve: list[dict[str, float]] = []
@@ -221,6 +223,10 @@ class BacktestEngine:
         start_idx = max(14 + 1, 20)  # RSI는 period+1, 볼린저는 period 이후부터 의미 있음
         if len(closes) <= start_idx:
             logger.warning("백테스트: %s — 유효한 캔들이 부족합니다 (%d개)", symbol, len(closes))
+
+        # 커스텀 임계치 기반 시그널 타입 결정
+        buy_threshold = self._config.buy_threshold
+        sell_threshold = self._config.sell_threshold
 
         for i in range(start_idx, len(closes)):
             price = closes[i]
@@ -258,15 +264,24 @@ class BacktestEngine:
             total_score = sentiment_score + quality_score + technical_score
             total_score = max(-100.0, min(100.0, total_score))
 
-            # AutoTrader의 스코어 → 시그널 타입 변환 로직 재사용
-            signal_type = AutoTrader._score_to_signal_type(total_score)  # type: ignore[attr-defined]
+            # 커스텀 임계치 기반 시그널 타입 결정
+            is_buy_signal = total_score >= buy_threshold
+            is_sell_signal = total_score <= sell_threshold
 
             # 현재 자산 가치 및 equity curve
             equity = capital + shares * price
             equity_curve.append({"date": date, "equity": round(equity, 2)})
 
             # 포지션 진입 조건
-            if shares == 0 and signal_type in (AutoSignalType.BUY, AutoSignalType.STRONG_BUY):
+            if shares == 0 and is_buy_signal:
+                # min_trade_interval_days 체크
+                if (
+                    self._config.min_trade_interval_days > 0
+                    and last_sell_idx is not None
+                    and (i - last_sell_idx) < self._config.min_trade_interval_days
+                ):
+                    continue
+
                 target_value = equity * self._config.max_position_pct
                 qty = int(target_value // price)
                 if qty <= 0:
@@ -291,7 +306,7 @@ class BacktestEngine:
                 pnl_pct = (price - entry_price) / entry_price
                 should_take_profit = pnl_pct >= self._config.take_profit
                 should_stop_loss = pnl_pct <= self._config.stop_loss
-                should_sell_signal = signal_type in (AutoSignalType.SELL, AutoSignalType.STRONG_SELL)
+                should_sell_signal = is_sell_signal
 
                 if should_take_profit or should_stop_loss or should_sell_signal:
                     proceeds = shares * price
@@ -308,6 +323,7 @@ class BacktestEngine:
                     )
                     shares = 0
                     entry_price = 0.0
+                    last_sell_idx = i
 
         # 마지막 날 평가 (미청산 포지션이 남아 있으면 그대로 시장가 정산한 것으로 가정)
         if shares > 0:

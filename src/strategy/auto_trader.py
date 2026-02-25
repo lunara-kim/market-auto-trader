@@ -29,6 +29,7 @@ from src.analysis.universe import UniverseManager
 from src.broker.kis_client import KISClient
 from src.strategy.oneshot import OneShotOrderConfig, OneShotOrderService
 from src.strategy.oneshot import OneShotSellConfig, OneShotSellService
+from src.strategy.safety import SafetyCheck
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -96,7 +97,12 @@ class AutoTraderConfig:
 class AutoTrader:
     """자동매매 엔진 — 센티멘트 + 스크리너 + 기술적 분석 → 주문 실행"""
 
-    def __init__(self, kis_client: KISClient, config: AutoTraderConfig | None = None) -> None:
+    def __init__(
+        self,
+        kis_client: KISClient,
+        config: AutoTraderConfig | None = None,
+        safety_check: SafetyCheck | None = None,
+    ) -> None:
         self._client = kis_client
         self._config = config or AutoTraderConfig()
         self._sentiment = MarketSentiment()
@@ -104,6 +110,7 @@ class AutoTrader:
         self._screener = StockScreener(kis_client)
         self._universe = UniverseManager()
         self._daily_trade_count = 0
+        self._safety_check = safety_check
 
     @property
     def config(self) -> AutoTraderConfig:
@@ -395,6 +402,20 @@ class AutoTrader:
             current_price = int(price_data.get("stck_prpr", 0) or 0)
             if current_price <= 0:
                 return None
+
+            # 안전장치 체크
+            if self._safety_check is not None:
+                check_result = self._safety_check.check(
+                    order_amount=current_price,
+                    available_cash=total_asset,
+                )
+                if not check_result.safe:
+                    logger.warning(
+                        "안전장치 차단: %s — %s",
+                        signal.stock_code,
+                        ", ".join(check_result.reasons),
+                    )
+                    return None
 
             # 매수 강도 배율 적용
             sentiment_result = self._sentiment.analyze()

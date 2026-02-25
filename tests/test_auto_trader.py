@@ -124,7 +124,7 @@ class TestCalculateSignal:
 
         with (
             patch.object(trader._screener, "get_fundamentals", return_value=fundamentals),
-            patch.object(trader._screener, "evaluate_quality", return_value=screening),
+            patch.object(trader._screener, "evaluate_quality_with_profile", return_value=screening),
         ):
             # 전일대비 -5% → RSI +20, 하단 근처 → 볼린저 +15
             mock_kis.get_price.return_value = {
@@ -150,7 +150,7 @@ class TestCalculateSignal:
 
         with (
             patch.object(trader._screener, "get_fundamentals", return_value=fundamentals),
-            patch.object(trader._screener, "evaluate_quality", return_value=screening),
+            patch.object(trader._screener, "evaluate_quality_with_profile", return_value=screening),
         ):
             mock_kis.get_price.return_value = {
                 "stck_prpr": "69000",
@@ -173,7 +173,7 @@ class TestCalculateSignal:
 
         with (
             patch.object(trader._screener, "get_fundamentals", return_value=fundamentals),
-            patch.object(trader._screener, "evaluate_quality", return_value=screening),
+            patch.object(trader._screener, "evaluate_quality_with_profile", return_value=screening),
         ):
             mock_kis.get_price.return_value = {
                 "stck_prpr": "70000",
@@ -195,7 +195,7 @@ class TestCalculateSignal:
 
         with (
             patch.object(trader._screener, "get_fundamentals", return_value=fundamentals),
-            patch.object(trader._screener, "evaluate_quality", return_value=screening),
+            patch.object(trader._screener, "evaluate_quality_with_profile", return_value=screening),
         ):
             mock_kis.get_price.return_value = {
                 "stck_prpr": "75000",
@@ -220,7 +220,7 @@ class TestCalculateSignal:
 
         with (
             patch.object(trader._screener, "get_fundamentals", return_value=fundamentals),
-            patch.object(trader._screener, "evaluate_quality", return_value=screening),
+            patch.object(trader._screener, "evaluate_quality_with_profile", return_value=screening),
         ):
             signal = trader.calculate_signal("005930", sentiment)
 
@@ -240,7 +240,7 @@ class TestCalculateSignal:
 
         with (
             patch.object(trader._screener, "get_fundamentals", return_value=fundamentals),
-            patch.object(trader._screener, "evaluate_quality", return_value=screening),
+            patch.object(trader._screener, "evaluate_quality_with_profile", return_value=screening),
         ):
             signal = trader.calculate_signal("005930", sentiment)
 

@@ -55,6 +55,9 @@ US_TOP30: list[str] = [
     "ACN", "MCD", "DHR",
 ]
 
+# US 주요 종목 (빅테크 + ETF)
+US_UNIVERSE: list[str] = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "QQQ"]
+
 # 기본 감시 종목 (KOSPI TOP 10)
 DEFAULT_WATCHLIST: list[str] = KOSPI_TOP30[:10]
 
@@ -82,6 +85,11 @@ class UniverseManager:
                 name="us_top30",
                 stock_codes=list(US_TOP30),
                 description="US 시가총액 상위 30",
+            ),
+            "us_universe": StockUniverse(
+                name="us_universe",
+                stock_codes=list(US_UNIVERSE),
+                description="US 주요 종목 (빅테크 + ETF)",
             ),
             "default_watchlist": StockUniverse(
                 name="default_watchlist",

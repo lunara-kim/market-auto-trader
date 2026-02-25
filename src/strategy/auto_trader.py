@@ -12,6 +12,12 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+from src.analysis.market_profile import (
+    SectorType,
+    StockProfile,
+    classify_by_profile,
+    get_stock_profile,
+)
 from src.analysis.screener import StockScreener
 from src.analysis.sentiment import (
     HybridSentimentAnalyzer,
@@ -128,7 +134,8 @@ class AutoTrader:
         signals: list[TradeSignal] = []
         for stock_code in universe.stock_codes:
             try:
-                signal = self.calculate_signal(stock_code, sentiment_result, hybrid_result)
+                profile = get_stock_profile(stock_code)
+                signal = self.calculate_signal(stock_code, sentiment_result, hybrid_result, profile)
                 signals.append(signal)
             except Exception:
                 logger.exception("시그널 계산 실패: %s", stock_code)
@@ -149,19 +156,46 @@ class AutoTrader:
         stock_code: str,
         sentiment_result: MarketSentimentResult,
         hybrid_result: HybridSentimentResult | None = None,
+        profile: StockProfile | None = None,
     ) -> TradeSignal:
         """단일 종목 시그널 계산
 
         - 센티멘트 점수: -30 ~ +30 (하이브리드 센티멘트 기반)
-        - PER 품질 점수: 0 or +25 (eligible이면 +25, 아니면 0으로 HOLD)
+        - PER 품질 점수: 프로필에 따라 차별화
+          - VALUE: 0 or +25 (eligible이면 +25)
+          - GROWTH: PEG 기반 0 or +25
+          - ETF: 0 (neutral, PER 스킵)
         - RSI 점수: -20 ~ +20
         - 볼린저 점수: -15 ~ +15
         """
-        # 1. 재무지표 + 품질 판단
-        fundamentals = self._screener.get_fundamentals(stock_code)
-        screening = self._screener.evaluate_quality(fundamentals)
+        # 프로필 자동 감지
+        if profile is None:
+            profile = get_stock_profile(stock_code)
 
-        # 가치함정/주주환원 미흡 → HOLD
+        # 1. 재무지표 + 프로필 기반 품질 판단
+        fundamentals = self._screener.get_fundamentals(stock_code)
+
+        # yfinance 성장률 데이터 조회 (US GROWTH용)
+        earnings_growth = None
+        revenue_growth = None
+        if profile.use_peg_ratio:
+            try:
+                import yfinance as yf
+                ticker = yf.Ticker(stock_code)
+                info = ticker.info or {}
+                earnings_growth = info.get("earningsGrowth")
+                revenue_growth = info.get("revenueGrowth")
+            except Exception:
+                logger.debug("yfinance 성장률 조회 실패: %s", stock_code)
+
+        screening = self._screener.evaluate_quality_with_profile(
+            fundamentals,
+            profile=profile,
+            earnings_growth=earnings_growth,
+            revenue_growth=revenue_growth,
+        )
+
+        # 가치함정/주주환원 미흡/고평가 → HOLD
         if not screening.eligible:
             return TradeSignal(
                 stock_code=stock_code,
@@ -185,11 +219,31 @@ class AutoTrader:
             fg_score = sentiment_result.fear_greed.score
             sentiment_score = (50 - fg_score) * 0.6  # 공포일수록 높은 점수
 
-        # 3. 품질 점수: eligible이면 +25
-        quality_score = 25.0
+        # 3. 품질 점수: 프로필별 차별화
+        if profile.skip_per_filter:
+            # ETF: PER 점수 = 0 (neutral)
+            quality_score = 0.0
+        elif profile.use_peg_ratio:
+            # GROWTH: PEG 기반 점수
+            _quality, score_adj, _reason = classify_by_profile(
+                profile=profile,
+                per=fundamentals.per,
+                sector_avg_per=fundamentals.sector_avg_per,
+                earnings_growth=earnings_growth,
+                revenue_growth=revenue_growth,
+            )
+            quality_score = score_adj  # 0 or 25
+        else:
+            # VALUE: 기존 로직
+            quality_score = 25.0
 
         # 4. 기술적 분석 (현재가 기반 간이 계산)
         technical_score = self._calculate_technical_score(stock_code)
+
+        # GROWTH 프로필: RSI(모멘텀) 가중치 증가
+        if profile.sector == SectorType.GROWTH:
+            technical_score *= 1.3
+            technical_score = max(-35.0, min(35.0, technical_score))
 
         # 총점
         total_score = sentiment_score + quality_score + technical_score

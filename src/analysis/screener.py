@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from src.analysis.market_profile import StockProfile, classify_by_profile
 from src.analysis.stock_data import STOCK_EXCHANGE_MAP, STOCK_FINANCIALS, STOCK_SECTOR_MAP
 from src.broker.kis_client import KISClient
 from src.utils.logger import get_logger
@@ -260,6 +261,83 @@ class StockScreener:
             quality="poor_shareholder_return",
             quality_score=score,
             reason="PER 저평가 조건 미충족 또는 주주환원 미흡",
+            eligible=False,
+        )
+
+    # ───────────────── 프로필 기반 품질 판단 ─────────────────
+
+    def evaluate_quality_with_profile(
+        self,
+        fundamentals: StockFundamentals,
+        profile: StockProfile | None = None,
+        earnings_growth: float | None = None,
+        revenue_growth: float | None = None,
+    ) -> ScreeningResult:
+        """프로필 기반 PER 품질 판단.
+
+        profile이 None이면 기존 evaluate_quality()로 fallback (하위호환).
+        ETF는 항상 eligible, GROWTH는 PEG 기반 판단.
+        """
+        if profile is None:
+            return self.evaluate_quality(fundamentals)
+
+        f = fundamentals
+        score = self.get_quality_score(f)
+
+        quality, _score_adj, reason = classify_by_profile(
+            profile=profile,
+            per=f.per,
+            sector_avg_per=f.sector_avg_per,
+            earnings_growth=earnings_growth,
+            revenue_growth=revenue_growth,
+        )
+
+        if quality == "skip":
+            # ETF: 항상 eligible
+            return ScreeningResult(
+                stock_code=f.stock_code,
+                stock_name=f.stock_name,
+                fundamentals=f,
+                quality="etf_pass",
+                quality_score=score,
+                reason=reason,
+                eligible=True,
+            )
+
+        if quality == "undervalued":
+            return ScreeningResult(
+                stock_code=f.stock_code,
+                stock_name=f.stock_name,
+                fundamentals=f,
+                quality="undervalued",
+                quality_score=score,
+                reason=reason,
+                eligible=True,
+            )
+
+        if quality == "fair":
+            # fair는 excluded 아님 — eligible로 처리 (GROWTH 특례)
+            if profile.use_peg_ratio:
+                return ScreeningResult(
+                    stock_code=f.stock_code,
+                    stock_name=f.stock_name,
+                    fundamentals=f,
+                    quality="fair",
+                    quality_score=score,
+                    reason=reason,
+                    eligible=True,
+                )
+            # VALUE fair → 기존 로직으로 fallback
+            return self.evaluate_quality(fundamentals)
+
+        # overvalued
+        return ScreeningResult(
+            stock_code=f.stock_code,
+            stock_name=f.stock_name,
+            fundamentals=f,
+            quality="overvalued",
+            quality_score=score,
+            reason=reason,
             eligible=False,
         )
 

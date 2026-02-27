@@ -30,6 +30,30 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def _sentiment_to_size_multiplier(score: float) -> float:
+    """센티멘트 점수(-100~+100) → 포지션 사이즈 배수 (0~1.5x).
+
+    AutoTrader._news_to_size_multiplier 와 동일한 매핑을 백테스트에서 재사용.
+    - 극단적 부정 (score <= -80): 0 (진입 차단)
+    - 부정 (-80 < score <= -50): 0.5 ~ 0.8x
+    - 약한 부정 (-50 < score < 0): 0.8 ~ 1.0x
+    - 중립 (0): 1.0x
+    - 약한 긍정 (0 < score < 50): 1.0 ~ 1.2x
+    - 긍정 (score >= 50): 1.2 ~ 1.5x
+    """
+    if score <= -80:
+        return 0.0
+    if score >= 50:
+        return 1.2 + (score - 50) / 100.0 * 0.6
+    if score <= -50:
+        return 0.5 + (score + 80) / 30.0 * 0.3
+    if score < 0:
+        return 0.8 + (score + 50) / 50.0 * 0.2
+    if score > 0:
+        return 1.0 + score / 50.0 * 0.2
+    return 1.0
+
+
 @dataclass(slots=True)
 class BacktestTrade:
     """개별 체결 내역."""
@@ -263,13 +287,14 @@ class BacktestEngine:
                 percent_b = 0.5
 
             # --- 시그널 스코어 계산 (AutoTrader 로직을 근사) ---
-            # 센티멘트: 히스토리컬 F&G 또는 고정 바이어스
+            # 센티멘트 → 사이즈 배수 (점수에는 합산하지 않음)
             if self._config.use_sentiment and self._sentiment_loader is not None:
-                # normalized: -100~+100, 부호 반전(공포→매수기회) 후 ±30 범위
                 normalized = self._sentiment_loader.get_normalized_score(date)
-                sentiment_score = -normalized / 100.0 * 30.0
+                # normalized: -100~+100 (공포→부정, 탐욕→긍정)
+                # 부호 반전: 공포(음수) → 부정 뉴스로 취급
+                sentiment_size_multiplier = _sentiment_to_size_multiplier(-normalized)
             else:
-                sentiment_score = self._config.sentiment_bias
+                sentiment_size_multiplier = 1.0
 
             # RSI: 과매도(30 이하) → 매수(+), 과매수(70 이상) → 매도(-)
             rsi_score = (50.0 - current_rsi) * 0.8  # 약 -40~+40 범위
@@ -287,7 +312,8 @@ class BacktestEngine:
                 trend_score = max(-10.0, min(10.0, ma_ratio * 100))
 
             technical_score = rsi_score + bollinger_score + trend_score
-            total_score = sentiment_score + quality_score + technical_score
+            # 총점: 품질 + 기술적 점수만 (센티멘트는 사이즈 배수로 분리)
+            total_score = quality_score + technical_score
             total_score = max(-100.0, min(100.0, total_score))
 
             # 커스텀 임계치 기반 시그널 타입 결정
@@ -300,6 +326,10 @@ class BacktestEngine:
 
             # 포지션 진입 조건
             if shares == 0 and is_buy_signal:
+                # 센티멘트 사이즈 배수 0 → 진입 차단
+                if sentiment_size_multiplier <= 0:
+                    continue
+
                 # 추세 필터: 강한 하락 추세에서 매수 방지
                 if self._config.use_trend_filter and ma_long[i] > 0:
                     # 가격이 장기 MA 대비 3% 이상 아래면 매수 스킵
@@ -315,7 +345,7 @@ class BacktestEngine:
                     continue
 
                 target_value = equity * self._config.max_position_pct
-                qty = int(target_value // price)
+                qty = int(target_value // price * sentiment_size_multiplier)
                 if qty <= 0:
                     continue
                 cost = qty * price

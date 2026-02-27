@@ -227,8 +227,8 @@ class TestHybridAnalyze:
 
 
 class TestAutoTraderHybrid:
-    def test_hybrid_sentiment_score_mapping(self) -> None:
-        """hybrid_score → sentiment ±30 매핑"""
+    def test_sentiment_does_not_affect_score(self) -> None:
+        """센티멘트는 총점에 기여하지 않고 size_multiplier만 조절"""
         from src.analysis.screener import ScreeningResult, StockFundamentals
         from src.strategy.auto_trader import AutoTrader, AutoTraderConfig
 
@@ -275,8 +275,10 @@ class TestAutoTraderHybrid:
         ):
             signal = trader.calculate_signal("005930", sentiment, hybrid)
 
-        # hybrid_score=-60, sentiment_score = -(-60)/100*30 = 18
+        # sentiment_score는 하위호환용으로 기록되지만 총점에는 합산되지 않음
         assert signal.sentiment_score == pytest.approx(18.0)
+        # 총점 = quality_score + technical_score (sentiment 제외)
+        assert signal.score == pytest.approx(signal.quality_score + signal.technical_score)
 
     def test_critical_urgency_skips_trading(self) -> None:
         """news urgency=critical → scan_universe returns empty"""
@@ -301,7 +303,7 @@ class TestAutoTraderHybrid:
         assert signals == []
 
     def test_no_hybrid_fallback(self) -> None:
-        """hybrid_result=None → 기존 방식 fallback"""
+        """hybrid_result=None → 기존 방식 fallback, 센티멘트는 점수에 미포함"""
         from src.analysis.screener import ScreeningResult, StockFundamentals
         from src.strategy.auto_trader import AutoTrader, AutoTraderConfig
 
@@ -340,8 +342,12 @@ class TestAutoTraderHybrid:
         ):
             signal = trader.calculate_signal("005930", sentiment, hybrid_result=None)
 
-        # 기존 방식: (50-30)*0.6 = 12
+        # 하위호환용 센티멘트 기록: (50-30)*0.6 = 12
         assert signal.sentiment_score == pytest.approx(12.0)
+        # 총점에는 센티멘트 미포함
+        assert signal.score == pytest.approx(signal.quality_score + signal.technical_score)
+        # hybrid=None → size_multiplier=1.0
+        assert signal.size_multiplier == 1.0
 
 
 # ---------------------------------------------------------------------------

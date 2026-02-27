@@ -1,0 +1,112 @@
+[
+  {
+    "date": "2026-02-26",
+    "market": "KR",
+    "total_return": 8.18,
+    "win_rate": 59.09,
+    "mdd": 2.01,
+    "sharpe": 2.64,
+    "details": {
+      "005930.KS": {
+        "return": -1.63,
+        "trades": 2
+      },
+      "000660.KS": {
+        "return": 17.6,
+        "trades": 4
+      },
+      "005380.KS": {
+        "return": 8.32,
+        "trades": 2
+      },
+      "000270.KS": {
+        "return": 6.6,
+        "trades": 2
+      },
+      "005490.KS": {
+        "return": 15.36,
+        "trades": 4
+      },
+      "035420.KS": {
+        "return": 12.96,
+        "trades": 10
+      },
+      "035720.KS": {
+        "return": 4.0,
+        "trades": 10
+      },
+      "259960.KS": {
+        "return": 2.24,
+        "trades": 10
+      }
+    }
+  },
+  {
+    "date": "2026-02-26",
+    "market": "US",
+    "total_return": -7.59,
+    "win_rate": 31.25,
+    "mdd": 11.03,
+    "sharpe": -2.0794,
+    "details": {
+      "AAPL": {
+        "return": 1.26,
+        "trades": 8
+      },
+      "MSFT": {
+        "return": -17.34,
+        "trades": 8
+      },
+      "NVDA": {
+        "return": -9.57,
+        "trades": 10
+      },
+      "QQQ": {
+        "return": -4.72,
+        "trades": 6
+      }
+    }
+  },
+  {
+    "date": "2026-02-27",
+    "market": "KR",
+    "total_return": 9.77,
+    "win_rate": 63.64,
+    "mdd": 2.01,
+    "sharpe": 3.0935,
+    "details": {
+      "005930.KS": {
+        "return": -1.63,
+        "trades": 2
+      },
+      "000660.KS": {
+        "return": 17.6,
+        "trades": 4
+      },
+      "005380.KS": {
+        "return": 8.32,
+        "trades": 2
+      },
+      "000270.KS": {
+        "return": 6.6,
+        "trades": 2
+      },
+      "005490.KS": {
+        "return": 15.36,
+        "trades": 4
+      },
+      "035420.KS": {
+        "return": 15.96,
+        "trades": 10
+      },
+      "035720.KS": {
+        "return": 11.04,
+        "trades": 10
+      },
+      "259960.KS": {
+        "return": 4.92,
+        "trades": 10
+      }
+    }
+  }
+]

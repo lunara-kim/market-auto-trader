@@ -20,19 +20,19 @@ class TestRegimeEngine:
         assert engine.classify(5) == MarketRegime.RISK_OFF
 
     def test_risk_off_boundary(self, engine: RegimeEngine) -> None:
-        assert engine.classify(24) == MarketRegime.RISK_OFF
+        assert engine.classify(29) == MarketRegime.RISK_OFF
 
     def test_neutral_lower(self, engine: RegimeEngine) -> None:
-        assert engine.classify(25) == MarketRegime.NEUTRAL
+        assert engine.classify(30) == MarketRegime.NEUTRAL
 
     def test_neutral_mid(self, engine: RegimeEngine) -> None:
         assert engine.classify(50) == MarketRegime.NEUTRAL
 
     def test_neutral_upper(self, engine: RegimeEngine) -> None:
-        assert engine.classify(74) == MarketRegime.NEUTRAL
+        assert engine.classify(64) == MarketRegime.NEUTRAL
 
     def test_risk_on_boundary(self, engine: RegimeEngine) -> None:
-        assert engine.classify(75) == MarketRegime.RISK_ON
+        assert engine.classify(65) == MarketRegime.RISK_ON
 
     def test_risk_on_extreme_greed(self, engine: RegimeEngine) -> None:
         assert engine.classify(95) == MarketRegime.RISK_ON

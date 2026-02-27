@@ -356,7 +356,8 @@ class AutoTrader:
             if tech.rsi_signal == "oversold":
                 signal_type = SignalType.BUY
                 strategy_used = "mean_reversion"
-            elif tech.bollinger_signal == "breakout" and tech.band_width_expanding:
+            elif tech.bollinger_signal == "breakout":
+                # Neutral에서는 band_expanding 없이도 돌파 시 약한 추세추종 허용
                 signal_type = SignalType.BUY
                 strategy_used = "trend_following"
             elif tech.rsi_signal == "overbought":

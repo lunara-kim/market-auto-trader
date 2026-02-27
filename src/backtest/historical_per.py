@@ -76,12 +76,13 @@ class HistoricalPERCalculator:
         elif info.get("per") is not None and info["per"] > 0:
             per = info["per"]
         else:
-            # PER 계산 불가 → 보수적으로 excluded
-            logger.debug("PER 계산 불가: %s", symbol)
+            # PER 계산 불가 → 데이터 부재 시 eligible 유지 (필터 통과)
+            # quality_score=0이면 게이트 방식에서 종목이 불필요하게 제외됨
+            logger.warning("PER 데이터 없음, 기본 eligible=True 적용: %s", symbol)
             return PERQualityResult(
                 per=None,
                 sector_avg_per=sector_avg_per,
-                is_undervalued=False,
+                is_undervalued=True,  # fallback: 제외하지 않음
                 quality_score=0.0,
             )
 

@@ -17,9 +17,9 @@ logger = get_logger(__name__)
 class MarketRegime(Enum):
     """시장 레짐"""
 
-    RISK_OFF = "risk_off"  # 공포 구간 (F&G < 25)
-    NEUTRAL = "neutral"  # 중립 (25 <= F&G < 75)
-    RISK_ON = "risk_on"  # 탐욕 구간 (F&G >= 75)
+    RISK_OFF = "risk_off"  # 공포 구간 (F&G < 30)
+    NEUTRAL = "neutral"  # 중립 (30 <= F&G < 65)
+    RISK_ON = "risk_on"  # 탐욕 구간 (F&G >= 65)
 
 
 class RegimeEngine:
@@ -34,9 +34,9 @@ class RegimeEngine:
 
     def classify(self, fear_greed_score: int) -> MarketRegime:
         """Fear & Greed 점수 → 레짐 분류"""
-        if fear_greed_score < 25:
+        if fear_greed_score < 30:
             regime = MarketRegime.RISK_OFF
-        elif fear_greed_score >= 75:
+        elif fear_greed_score >= 65:
             regime = MarketRegime.RISK_ON
         else:
             regime = MarketRegime.NEUTRAL

@@ -12,7 +12,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from src.analysis.market_profile import StockProfile, classify_by_profile
 from src.analysis.stock_data import STOCK_EXCHANGE_MAP, STOCK_FINANCIALS, STOCK_SECTOR_MAP
 from src.broker.kis_client import KISClient
 from src.utils.logger import get_logger
@@ -115,6 +114,65 @@ class StockScreener:
     ) -> None:
         self._client = kis_client
         self._config = config or ScreenerConfig()
+
+    # ───────────────── 프로필 기반 품질 판단 (PEG 지원) ─────────────────
+
+    def evaluate_quality_with_profile(
+        self,
+        fundamentals: StockFundamentals,
+        *,
+        profile: object | None = None,
+        earnings_growth: float | None = None,
+        revenue_growth: float | None = None,
+    ) -> ScreeningResult:
+        """시장/섹터 프로필을 고려한 품질 판단.
+
+        - profile이 없으면 기존 evaluate_quality를 그대로 사용합니다.
+        - ETF 등 PER 필터를 건너뛰는 프로필은 quality="undervalued", eligible=True로 통과시킵니다.
+        - US 성장주의 경우 PEG ratio 기반으로 보정만 수행하고, 나머지 로직은 evaluate_quality 결과를 사용합니다.
+        """
+        from src.analysis.market_profile import StockProfile, classify_by_profile  # 늦은 import로 순환참조 방지
+
+        if profile is None:
+            return self.evaluate_quality(fundamentals)
+
+        # ETF: PER 필터 스킵 → 기술적 분석만 사용하도록 무조건 eligible
+        if getattr(profile, "skip_per_filter", False):
+            return ScreeningResult(
+                stock_code=fundamentals.stock_code,
+                stock_name=fundamentals.stock_name,
+                fundamentals=fundamentals,
+                quality="etf",
+                quality_score=self.get_quality_score(fundamentals),
+                reason="ETF: PER 필터 스킵",
+                eligible=True,
+            )
+
+        # 기본 평가 먼저 수행
+        base = self.evaluate_quality(fundamentals)
+
+        # US 성장주: PEG ratio 기반 보정
+        if isinstance(profile, StockProfile) and profile.use_peg_ratio:
+            quality, score_adj, reason = classify_by_profile(
+                profile=profile,
+                per=fundamentals.per,
+                sector_avg_per=fundamentals.sector_avg_per,
+                earnings_growth=earnings_growth,
+                revenue_growth=revenue_growth,
+            )
+
+            return ScreeningResult(
+                stock_code=fundamentals.stock_code,
+                stock_name=fundamentals.stock_name,
+                fundamentals=fundamentals,
+                quality=quality,
+                quality_score=base.quality_score,
+                reason=reason,
+                eligible=quality == "undervalued",
+            )
+
+        # 나머지는 기존 평가 결과 사용
+        return base
 
     # ───────────────── 재무지표 조회 ─────────────────
 
@@ -261,83 +319,6 @@ class StockScreener:
             quality="poor_shareholder_return",
             quality_score=score,
             reason="PER 저평가 조건 미충족 또는 주주환원 미흡",
-            eligible=False,
-        )
-
-    # ───────────────── 프로필 기반 품질 판단 ─────────────────
-
-    def evaluate_quality_with_profile(
-        self,
-        fundamentals: StockFundamentals,
-        profile: StockProfile | None = None,
-        earnings_growth: float | None = None,
-        revenue_growth: float | None = None,
-    ) -> ScreeningResult:
-        """프로필 기반 PER 품질 판단.
-
-        profile이 None이면 기존 evaluate_quality()로 fallback (하위호환).
-        ETF는 항상 eligible, GROWTH는 PEG 기반 판단.
-        """
-        if profile is None:
-            return self.evaluate_quality(fundamentals)
-
-        f = fundamentals
-        score = self.get_quality_score(f)
-
-        quality, _score_adj, reason = classify_by_profile(
-            profile=profile,
-            per=f.per,
-            sector_avg_per=f.sector_avg_per,
-            earnings_growth=earnings_growth,
-            revenue_growth=revenue_growth,
-        )
-
-        if quality == "skip":
-            # ETF: 항상 eligible
-            return ScreeningResult(
-                stock_code=f.stock_code,
-                stock_name=f.stock_name,
-                fundamentals=f,
-                quality="etf_pass",
-                quality_score=score,
-                reason=reason,
-                eligible=True,
-            )
-
-        if quality == "undervalued":
-            return ScreeningResult(
-                stock_code=f.stock_code,
-                stock_name=f.stock_name,
-                fundamentals=f,
-                quality="undervalued",
-                quality_score=score,
-                reason=reason,
-                eligible=True,
-            )
-
-        if quality == "fair":
-            # fair는 excluded 아님 — eligible로 처리 (GROWTH 특례)
-            if profile.use_peg_ratio:
-                return ScreeningResult(
-                    stock_code=f.stock_code,
-                    stock_name=f.stock_name,
-                    fundamentals=f,
-                    quality="fair",
-                    quality_score=score,
-                    reason=reason,
-                    eligible=True,
-                )
-            # VALUE fair → 기존 로직으로 fallback
-            return self.evaluate_quality(fundamentals)
-
-        # overvalued
-        return ScreeningResult(
-            stock_code=f.stock_code,
-            stock_name=f.stock_name,
-            fundamentals=f,
-            quality="overvalued",
-            quality_score=score,
-            reason=reason,
             eligible=False,
         )
 

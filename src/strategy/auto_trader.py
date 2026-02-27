@@ -251,7 +251,15 @@ class AutoTrader:
     def _news_to_size_multiplier(
         hybrid_result: HybridSentimentResult | None,
     ) -> float:
-        """뉴스 센티멘트 → 포지션 사이즈 배수 (0.5x ~ 1.5x)"""
+        """뉴스 센티멘트 → 포지션 사이즈 배수 (0 ~ 1.5x)
+
+        - 극단적 부정 (news_score <= -80): 0 (진입 차단)
+        - 부정 (-80 < score <= -50): 0.5 ~ 0.8x
+        - 약한 부정 (-50 < score < 0): 0.8 ~ 1.0x
+        - 중립 (0): 1.0x
+        - 약한 긍정 (0 < score < 50): 1.0 ~ 1.2x
+        - 긍정 (score >= 50): 1.2 ~ 1.5x
+        """
         if hybrid_result is None or not hybrid_result.news_available:
             return 1.0
 
@@ -259,17 +267,24 @@ class AutoTrader:
         if news_score is None:
             return 1.0
 
+        # 극단적 부정 → 진입 차단
+        if news_score <= -80:
+            return 0.0
+
         # news_score: -100 ~ +100
-        # 긍정(+50 이상) → 1.2~1.5x
-        # 부정(-50 이하) → 0.5~0.8x
-        # 중립 → ~1.0x
         if news_score >= 50:
             return 1.2 + (news_score - 50) / 100.0 * 0.6  # 1.2 ~ 1.5
         elif news_score <= -50:
-            return 0.8 + (news_score + 50) / 100.0 * 0.6  # 0.5 ~ 0.8
+            # -80 ~ -50 → 0.5 ~ 0.8
+            return 0.5 + (news_score + 80) / 30.0 * 0.3
+        elif news_score < 0:
+            # -50 ~ 0 → 0.8 ~ 1.0
+            return 0.8 + (news_score + 50) / 50.0 * 0.2
+        elif news_score > 0:
+            # 0 ~ 50 → 1.0 ~ 1.2
+            return 1.0 + news_score / 50.0 * 0.2
         else:
-            # -50 ~ +50 → 0.8 ~ 1.2 선형
-            return 1.0 + news_score / 125.0
+            return 1.0
 
     # ───────────────── 시그널 계산 (게이트 방식) ─────────────────
 
@@ -364,7 +379,7 @@ class AutoTrader:
                 signal_type = SignalType.SELL
                 strategy_used = "mean_reversion"
 
-        # 뉴스 센티멘트 → 사이즈 배수
+        # 뉴스 센티멘트 → 사이즈 배수 (점수에는 기여하지 않음)
         size_multiplier = self._news_to_size_multiplier(hybrid_result)
 
         # 품질 점수 (정렬용)
@@ -388,13 +403,14 @@ class AutoTrader:
             technical_score *= 1.3
             technical_score = max(-35.0, min(35.0, technical_score))
 
-        # 센티멘트 점수 (정렬용, 하위호환)
+        # 센티멘트 점수 (하위호환용 기록만, 총점에는 합산하지 않음)
         if hybrid_result is not None:
             sentiment_score = -hybrid_result.hybrid_score / 100.0 * 30.0
         else:
             sentiment_score = (50 - fg_score) * 0.6
 
-        total_score = sentiment_score + quality_score + technical_score
+        # 총점: 품질 + 기술적 점수만 (센티멘트는 size_multiplier로 분리)
+        total_score = quality_score + technical_score
         total_score = max(-100.0, min(100.0, total_score))
 
         # STRONG 변환: 점수 기반으로 강도 조절
@@ -596,10 +612,16 @@ class AutoTrader:
     # ───────────────── 매도 체크 ─────────────────
 
     def check_holdings_for_sell(self) -> list[TradeSignal]:
-        """보유 종목 매도 시그널 체크"""
+        """보유 종목 매도 시그널 체크 (강한 부정 뉴스 → 청산 가속)"""
         balance = self._client.get_balance()
         holdings = balance.get("holdings", [])
         sentiment_result = self._sentiment.analyze()
+
+        # 뉴스 센티멘트 기반 청산 가속 판단
+        try:
+            hybrid_result = self._hybrid_sentiment.analyze()
+        except Exception:
+            hybrid_result = None
 
         sell_signals: list[TradeSignal] = []
 
@@ -636,6 +658,25 @@ class AutoTrader:
                         signal_type=SignalType.STRONG_SELL,
                         score=-80.0,
                         reason=f"손절: 수익률 {pnl_rate:+.1f}% ≤ -5%",
+                        recommended_action=f"sell {qty}주 @ {current_price:,}원",
+                    )
+                )
+                continue
+
+            # 청산 가속: 강한 부정 뉴스 (news_score <= -60) → 청산 우선순위 상향
+            if (
+                hybrid_result is not None
+                and hybrid_result.news_available
+                and hybrid_result.news_score is not None
+                and hybrid_result.news_score <= -60
+            ):
+                sell_signals.append(
+                    TradeSignal(
+                        stock_code=stock_code,
+                        stock_name=stock_name,
+                        signal_type=SignalType.SELL,
+                        score=-60.0,
+                        reason=f"청산가속: 강한 부정 뉴스 (news={hybrid_result.news_score:.0f}), 수익률 {pnl_rate:+.1f}%",
                         recommended_action=f"sell {qty}주 @ {current_price:,}원",
                     )
                 )
